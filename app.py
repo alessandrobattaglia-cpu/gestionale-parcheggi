@@ -8,8 +8,8 @@ key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # --- 2. CONFIGURAZIONE INTERFACCIA WEB ---
-st.set_page_config(page_title="Prenotazione Parcheggi", page_icon="🚗", layout="centered")
-st.title("🚗 Gestionale Parcheggio Aziendale")
+st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="centered")
+st.title("🚗 Parcheggi Symposium")
 
 # Usiamo lo "session_state" di Streamlit per ricordarci se l'utente ha già fatto il login
 if "utente_autenticato" not in st.session_state:

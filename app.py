@@ -136,4 +136,72 @@ for codice_posto, coord in POSTI.items():
         if is_admin:
             testi.append(f"⛔ {codice_posto}<br>Occupato da: {prenotazioni_giorno[codice_posto]['username']}<br>Targa: {prenotazioni_giorno[codice_posto]['targa']}")
         else:
-            testi.append(
+            testi.append(f"⛔ {codice_posto} (Occupato)")
+    else:
+        colori.append("green")
+        testi.append(f"🟢 {codice_posto} (Libero - Clicca per prenotare)")
+
+fig = go.Figure()
+fig.add_trace(go.Image(z=img))
+
+fig.add_trace(go.Scatter(
+    x=scelte_x, y=scelte_y,
+    mode="markers",
+    marker=dict(size=14, color=colori, line=dict(width=1.5, color="white")),
+    text=testi,
+    hoverinfo="text",
+    customdata=chiavi_posto
+))
+
+fig.update_layout(
+    margin=dict(l=0, r=0, t=0, b=0),
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+    clickmode="event+select"
+)
+
+st.subheader(f"Situazione Parcheggi per il giorno: {data_str}")
+config = {'displayModeBar': False}
+click_data = st.plotly_chart(fig, use_container_width=True, on_select="rerun", config=config)
+
+# --- 7. LOGICA PRENOTAZIONE ---
+if not is_admin:
+    ha_gia_prenotato = supabase.table("prenotazioni").select("id, posto_id").eq("utente_id", utente_loggato["id"]).eq("data", data_str).execute()
+    
+    if ha_gia_prenotato.data:
+        posto_occupato_ora = ha_gia_prenotato.data[0]["posto_id"]
+        st.warning(f"🏷️ Hai già riservato il posto **{posto_occupato_ora}** per oggi.")
+        if st.button("Cancella la mia prenotazione ❌", use_container_width=True):
+            supabase.table("prenotazioni").delete().eq("id", ha_gia_prenotato.data[0]["id"]).execute()
+            st.success("Prenotazione cancellata!")
+            st.rerun()
+    else:
+        st.info("💡 **Come prenotare:** Fai click su un pallino **VERDE** direttamente sulla mappa per scegliere il tuo posto.")
+        
+        if click_data and "selection" in click_data and click_data["selection"]["points"]:
+            punto_cliccato = click_data["selection"]["points"][0]
+            indice_punto = punto_cliccato["pointNumber"]
+            
+            if indice_punto < len(chiavi_posto):
+                posto_scelto = chiavi_posto[indice_punto]
+                
+                if posto_scelto not in prenotazioni_giorno:
+                    st.success(f"Hai selezionato il posto: **{posto_scelto}**")
+                    if st.button(f"Conferma Prenotazione Posto {posto_scelto} 🟢", use_container_width=True):
+                        supabase.table("prenotazioni").insert({
+                            "utente_id": utente_loggato["id"],
+                            "data": data_str,
+                            "posto_id": posto_scelto
+                        }).execute()
+                        st.success(f"Posto {posto_scelto} prenotato!")
+                        st.rerun()
+                else:
+                    st.error("Questo posto è stato appena occupato. Scegline un altro verde.")
+else:
+    st.divider()
+    st.subheader("📋 Riepilogo rapido admin")
+    if prenotazioni_giorno:
+        for p_id, info in prenotazioni_giorno.items():
+            st.write(f"🚗 Posto **{p_id}** -> Occupato da **{info['username']}** (Targa: {info['targa']})")
+    else:
+        st.info("Nessun posto occupato in questa data.")

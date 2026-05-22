@@ -37,6 +37,7 @@ if st.session_state["utente_autenticato"] is None:
 
 utente_loggato = st.session_state["utente_autenticato"]
 username = utente_loggato["username"]
+is_admin = (username.lower() == "admin")
 
 # Sidebar di controllo
 st.sidebar.header("👤 Account")
@@ -48,13 +49,25 @@ oggi = date.today()
 data_scelta = st.sidebar.date_input("Vedi prenotazioni del:", min_value=oggi)
 data_str = data_scelta.strftime("%Y-%m-%d")
 
+# --- STRUMENTO DI CALIBRAZIONE ADMIN ---
+if is_admin:
+    st.sidebar.divider()
+    st.sidebar.subheader("🛠️ Calibrazione Mappa")
+    st.sidebar.write("Muovi i cursori per far combaciare i pallini ai quadrati.")
+    scale_x = st.sidebar.slider("↔️ Stringi/Allarga (Scala X)", 0.20, 2.00, 1.00, 0.01)
+    scale_y = st.sidebar.slider("↕️ Schiaccia/Allunga (Scala Y)", 0.20, 2.00, 1.00, 0.01)
+    offset_x = st.sidebar.slider("⬅️ Sposta Destra/Sinistra (Offset X)", -800, 800, 0, 5)
+    offset_y = st.sidebar.slider("⬆️ Sposta Su/Giù (Offset Y)", -800, 800, 0, 5)
+else:
+    # Valori di default temporanei per gli utenti normali
+    scale_x, scale_y, offset_x, offset_y = 1.0, 1.0, 0, 0
+
 if st.sidebar.button("Log out ❌"):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# --- 4. COORDINATE REALI CALIBRATE AL MILLIMETRO SUI QUADRATI (X, Y) ---
+# --- 4. COORDINATE BASE DA CALIBRARE ---
 POSTI = {
-    # ZONA BASSA (Fascia viola inclinata in alto)
     "Bassa-1": {"x": 40, "y": 288},   "Bassa-2": {"x": 72, "y": 272},
     "Bassa-3": {"x": 105, "y": 257},  "Bassa-4": {"x": 145, "y": 238},
     "Bassa-5": {"x": 178, "y": 222},  "Bassa-6": {"x": 210, "y": 207},
@@ -64,45 +77,29 @@ POSTI = {
     "Bassa-13": {"x": 440, "y": 98},  "Bassa-14": {"x": 472, "y": 82},
     "Bassa-15": {"x": 505, "y": 66},
 
-    # INGRESSO PIAZZALE (I 6 rettangoli azzurri obliqui vicino alla chiesa)
     "Piazzale-1": {"x": 458, "y": 150}, "Piazzale-2": {"x": 418, "y": 178},
     "Piazzale-3": {"x": 393, "y": 215}, "Piazzale-4": {"x": 370, "y": 255},
     "Piazzale-5": {"x": 348, "y": 296}, "Piazzale-6": {"x": 382, "y": 360},
 
-    # ZONA CENTRALE STUDENTI (Rettangoli azzurri verticali)
-    "Studenti-7": {"x": 515, "y": 420},
-    "Studenti-8": {"x": 490, "y": 502},
-    "Studenti-9": {"x": 510, "y": 570},
-    "Studenti-10": {"x": 510, "y": 630},
-    "Studenti-11": {"x": 510, "y": 690},
-    "Studenti-12": {"x": 510, "y": 750},
-    "Studenti-13": {"x": 510, "y": 810},
-    "Studenti-14": {"x": 510, "y": 870},
+    "Studenti-7": {"x": 515, "y": 420}, "Studenti-8": {"x": 490, "y": 502},
+    "Studenti-9": {"x": 510, "y": 570}, "Studenti-10": {"x": 510, "y": 630},
+    "Studenti-11": {"x": 510, "y": 690}, "Studenti-12": {"x": 510, "y": 750},
+    "Studenti-13": {"x": 510, "y": 810}, "Studenti-14": {"x": 510, "y": 870},
     
-    # ZONA CENTRALE ALLOGGI (Colonna verde a sinistra, sotto i docenti)
-    "Alloggi-13": {"x": 68, "y": 665},
-    "Alloggi-12": {"x": 68, "y": 725},
-    "Alloggi-11": {"x": 68, "y": 782},
-    "Alloggi-10": {"x": 68, "y": 840},
-    "Alloggi-9":  {"x": 68, "y": 900},
-    "Alloggi-8":  {"x": 68, "y": 958},
-    "Alloggi-7":  {"x": 68, "y": 1018},
-    "Alloggi-6":  {"x": 68, "y": 1075},
+    "Alloggi-13": {"x": 68, "y": 665}, "Alloggi-12": {"x": 68, "y": 725},
+    "Alloggi-11": {"x": 68, "y": 782}, "Alloggi-10": {"x": 68, "y": 840},
+    "Alloggi-9":  {"x": 68, "y": 900}, "Alloggi-8":  {"x": 68, "y": 958},
+    "Alloggi-7":  {"x": 68, "y": 1018}, "Alloggi-6":  {"x": 68, "y": 1075},
 
-    # ZONA CENTRALE ALLOGGI (Riga verde orizzontale in basso)
-    "Alloggi-5": {"x": 195, "y": 1025},
-    "Alloggi-4": {"x": 268, "y": 1025},
-    "Alloggi-3": {"x": 340, "y": 1025},
-    "Alloggi-2": {"x": 412, "y": 1025},
+    "Alloggi-5": {"x": 195, "y": 1025}, "Alloggi-4": {"x": 268, "y": 1025},
+    "Alloggi-3": {"x": 340, "y": 1025}, "Alloggi-2": {"x": 412, "y": 1025},
     "Alloggi-1": {"x": 482, "y": 1025},
     
-    # ZONA ALTA (Blocco arancione centrale a destra - Posti da 1 a 7)
     "Alta-1": {"x": 845, "y": 502}, "Alta-2": {"x": 845, "y": 537},
     "Alta-3": {"x": 845, "y": 572}, "Alta-4": {"x": 845, "y": 607},
     "Alta-5": {"x": 845, "y": 642}, "Alta-6": {"x": 845, "y": 677},
     "Alta-7": {"x": 845, "y": 712},
     
-    # ZONA ALTA (Colonna arancione stretta a destra - Posti da 8 a 20)
     "Alta-8":  {"x": 1065, "y": 456}, "Alta-9":  {"x": 1065, "y": 492},
     "Alta-10": {"x": 1065, "y": 528}, "Alta-11": {"x": 1065, "y": 564},
     "Alta-12": {"x": 1065, "y": 600}, "Alta-13": {"x": 1065, "y": 636},
@@ -126,16 +123,20 @@ if risposta_p.data:
                 "targa": info_u.get("targa", "-")
             }
 
-# --- 6. RENDERIZZAZIONE GRAFICA MAPPA ---
+# --- 6. RENDERIZZAZIONE MAPPA E CALCOLO CALIBRAZIONE ---
 img = Image.open("mappa.png")
 
-is_admin = (username.lower() == "admin")
 scelte_x, scelte_y, colori, testi, chiavi_posto = [], [], [], [], []
 
 for codice_posto, coord in POSTI.items():
     chiavi_posto.append(codice_posto)
-    scelte_x.append(coord["x"])
-    scelte_y.append(coord["y"])
+    
+    # Applichiamo la calibrazione matematica in tempo reale
+    x_calibrato = (coord["x"] * scale_x) + offset_x
+    y_calibrato = (coord["y"] * scale_y) + offset_y
+    
+    scelte_x.append(x_calibrato)
+    scelte_y.append(y_calibrato)
     
     if codice_posto in prenotazioni_giorno:
         colori.append("red")
@@ -150,25 +151,26 @@ for codice_posto, coord in POSTI.items():
 fig = go.Figure()
 fig.add_trace(go.Image(z=img))
 
-# Disegno dei pallini sopra l'immagine
 fig.add_trace(go.Scatter(
     x=scelte_x, y=scelte_y,
     mode="markers",
-    marker=dict(size=18, color=colori, line=dict(width=2, color="white")),
+    marker=dict(size=14, color=colori, line=dict(width=1.5, color="white")),
     text=testi,
     hoverinfo="text",
     customdata=chiavi_posto
 ))
 
-# Vincoliamo gli assi cartesiani alle dimensioni esatte dell'immagine per non far fluttuare i punti
-fig.update_xaxes(range=[0, img.width], showgrid=False, zeroline=False, visible=False)
-fig.update_yaxes(range=[img.height, 0], showgrid=False, zeroline=False, visible=False)
+# Vincolo l'immagine a proporzioni costanti
+fig.update_xaxes(range=[0, img.width], showgrid=False, zeroline=False, visible=False, constrain="domain")
+fig.update_yaxes(range=[img.height, 0], showgrid=False, zeroline=False, visible=False, scaleanchor="x", scaleratio=1)
 
 fig.update_layout(
     margin=dict(l=0, r=0, t=0, b=0),
-    clickmode="event+select",
-    height=800 # Altezza ottimale fissa per non schiacciare il rendering
+    clickmode="event+select"
 )
+
+if is_admin:
+    st.info(f"**🛠️ Valori attuali da comunicarmi:** Scala X: **{scale_x:.2f}** | Scala Y: **{scale_y:.2f}** | Offset X: **{offset_x}** | Offset Y: **{offset_y}**")
 
 st.subheader(f"Situazione Parcheggi per il giorno: {data_str}")
 config = {'displayModeBar': False}

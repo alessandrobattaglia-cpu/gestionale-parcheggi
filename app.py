@@ -25,7 +25,6 @@ if st.session_state["utente_autenticato"] is None:
         password_inserita = st.text_input("Password:", type="password")
         if st.form_submit_button("Accedi 🔓", use_container_width=True):
             if username_inserito and password_inserita:
-                # Recuperiamo direttamente la colonna di testo 'gruppo'
                 risposta = supabase.table("utenti").select("id, username, targa, gruppo").eq("username", username_inserito).eq("password", password_inserita).execute()
                 if risposta.data:
                     st.session_state["utente_autenticato"] = risposta.data[0]
@@ -38,7 +37,7 @@ if st.session_state["utente_autenticato"] is None:
 
 utente_loggato = st.session_state["utente_autenticato"]
 username = utente_loggato["username"]
-gruppo_utente = utente_loggato.get("gruppo", "Marketing 1") # Default se vuoto
+gruppo_utente = utente_loggato.get("gruppo", "Marketing 1")
 is_admin = (username.lower() == "admin")
 
 # Sidebar di controllo
@@ -118,7 +117,7 @@ if risposta_p.data:
                 "targa": info_u.get("targa", "-")
             }
 
-# --- 6. COSTRUZIONE E DISEGNO DELLA MAPPA MAPPA ---
+# --- 6. COSTRUZIONE E DISEGNO DELLA MAPPA ---
 img = Image.open("mappa.png")
 scelte_x, scelte_y, colori, testi, chiavi_posto = [], [], [], [], []
 
@@ -156,13 +155,12 @@ fig.update_layout(height=850, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+
 st.subheader(f"Mappa Parcheggi per il giorno: {data_str}")
 config = {'displayModeBar': False}
 
-# Solo il Personale può interagire cliccando sulla mappa, per gli altri è bloccata a schermo (clickmode gestito dinamicamente)
+# CORREZIONE: Usiamo "ignore" al posto di None per evitare l'eccezione Streamlit
 is_personale = (gruppo_utente == "Personale")
-click_data = st.plotly_chart(fig, use_container_width=True, on_select="rerun" if is_personale else None, config=config)
+click_data = st.plotly_chart(fig, use_container_width=True, on_select="rerun" if is_personale else "ignore", config=config)
 
 # --- 7. LOGICA ASSEGNAZIONE E PRENOTAZIONE DIZIONARIATA ---
 if not is_admin:
-    # Controlla se l'utente loggato ha già una prenotazione per oggi
     ha_gia_prenotato = supabase.table("prenotazioni").select("id, posto_id").eq("utente_id", utente_loggato["id"]).eq("data", data_str).execute()
     
     if ha_gia_prenotato.data:
@@ -196,7 +194,6 @@ if not is_admin:
         elif gruppo_utente == "Alloggi":
             st.info("ℹ️ I membri del gruppo Alloggi ricevono un posto automatico nella zona verde.")
             if st.button("Richiedi Assegnazione Posto Alloggi 🚗", use_container_width=True):
-                # Filtra solo i posti che iniziano con Alloggi-
                 posti_alloggi = [k for k in POSTI.keys() if k.startswith("Alloggi-")]
                 posto_trovato = None
                 for p in posti_alloggi:
@@ -211,11 +208,10 @@ if not is_admin:
                 else:
                     st.error("❌ Purtroppo tutti i posti Alloggi sono esauriti per questa data.")
 
-        # CASO C: TUTTI GLI ALTRI GRUPPI (STUDENTI, BASSA, ALTA AUTOMATICI)
+        # CASO C: TUTTI GLI ALTRI GRUPPI (AUTOMATICI)
         else:
             st.info(f"ℹ️ Come membro del gruppo **{gruppo_utente}**, il sistema ti assegnerà automaticamente un posto libero tra la Zona Studenti, Bassa o Alta.")
             if st.button("Richiedi Assegnazione Posto Auto 🚗", use_container_width=True):
-                # Filtra escludendo gli Alloggi
                 posti_comuni = [k for k in POSTI.keys() if not k.startswith("Alloggi-")]
                 posto_trovato = None
                 for p in posti_comuni:
@@ -237,4 +233,4 @@ else:
         for p_id, info in prenotazioni_giorno.items():
             st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Targa: {info['targa']})")
     else:
-        st.info("Nessuna prenotazione effettuata per questa giornata.")
+        st.info("Nessun posto occupato in questa data.")

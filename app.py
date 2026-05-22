@@ -21,7 +21,7 @@ if st.session_state["utente_autenticato"] is None:
     st.write("Inserisci le tue credenziali aziendali per accedere.")
     
     with st.form("form_login"):
-        username_inserito = st.text_input("Username o Email:")
+        username_inserito = st.text_input("Username:")
         password_inserita = st.text_input("Password:", type="password")
         bottone_login = st.form_submit_button("Accedi 🔓", use_container_width=True)
         

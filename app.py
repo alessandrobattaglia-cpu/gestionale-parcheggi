@@ -49,24 +49,17 @@ oggi = date.today()
 data_scelta = st.sidebar.date_input("Vedi prenotazioni del:", min_value=oggi)
 data_str = data_scelta.strftime("%Y-%m-%d")
 
-# --- STRUMENTO DI CALIBRAZIONE ADMIN ---
-if is_admin:
-    st.sidebar.divider()
-    st.sidebar.subheader("🛠️ Calibrazione Mappa")
-    st.sidebar.write("Muovi i cursori per far combaciare i pallini ai quadrati.")
-    scale_x = st.sidebar.slider("↔️ Stringi/Allarga (Scala X)", 0.20, 2.00, 1.00, 0.01)
-    scale_y = st.sidebar.slider("↕️ Schiaccia/Allunga (Scala Y)", 0.20, 2.00, 1.00, 0.01)
-    offset_x = st.sidebar.slider("⬅️ Sposta Destra/Sinistra (Offset X)", -800, 800, 0, 5)
-    offset_y = st.sidebar.slider("⬆️ Sposta Su/Giù (Offset Y)", -800, 800, 0, 5)
-else:
-    # Valori di default temporanei per gli utenti normali
-    scale_x, scale_y, offset_x, offset_y = 1.0, 1.0, 0, 0
-
 if st.sidebar.button("Log out ❌"):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# --- 4. COORDINATE BASE DA CALIBRARE ---
+# --- 4. VALORI DI CALIBRAZIONE DEFINITIVI FISSATI ---
+scale_x = 1.22
+scale_y = 0.98
+offset_x = 15
+offset_y = 0
+
+# --- COORDINATE BASE DEI POSTI ---
 POSTI = {
     "Bassa-1": {"x": 40, "y": 288},   "Bassa-2": {"x": 72, "y": 272},
     "Bassa-3": {"x": 105, "y": 257},  "Bassa-4": {"x": 145, "y": 238},
@@ -86,14 +79,14 @@ POSTI = {
     "Studenti-11": {"x": 510, "y": 690}, "Studenti-12": {"x": 510, "y": 750},
     "Studenti-13": {"x": 510, "y": 810}, "Studenti-14": {"x": 510, "y": 870},
     
-    "Alloggi-13": {"x": 68, "y": 665}, "Alloggi-12": {"x": 68, "y": 725},
-    "Alloggi-11": {"x": 68, "y": 782}, "Alloggi-10": {"x": 68, "y": 840},
-    "Alloggi-9":  {"x": 68, "y": 900}, "Alloggi-8":  {"x": 68, "y": 958},
-    "Alloggi-7":  {"x": 68, "y": 1018}, "Alloggi-6":  {"x": 68, "y": 1075},
+    "Alloggi-13": {"x": 68, "y": 665}, "Alloggi-12": {"x": 68, "y": 715},
+    "Alloggi-11": {"x": 68, "y": 765}, "Alloggi-10": {"x": 68, "y": 815},
+    "Alloggi-9":  {"x": 68, "y": 865}, "Alloggi-8":  {"x": 68, "y": 915},
+    "Alloggi-7":  {"x": 68, "y": 965}, "Alloggi-6":  {"x": 68, "y": 1015},
 
-    "Alloggi-5": {"x": 195, "y": 1025}, "Alloggi-4": {"x": 268, "y": 1025},
-    "Alloggi-3": {"x": 340, "y": 1025}, "Alloggi-2": {"x": 412, "y": 1025},
-    "Alloggi-1": {"x": 482, "y": 1025},
+    "Alloggi-5": {"x": 195, "y": 1025}, "Alloggi-4": {"x": 250, "y": 1025},
+    "Alloggi-3": {"x": 305, "y": 1025}, "Alloggi-2": {"x": 360, "y": 1025},
+    "Alloggi-1": {"x": 415, "y": 1025},
     
     "Alta-1": {"x": 845, "y": 502}, "Alta-2": {"x": 845, "y": 537},
     "Alta-3": {"x": 845, "y": 572}, "Alta-4": {"x": 845, "y": 607},
@@ -123,7 +116,7 @@ if risposta_p.data:
                 "targa": info_u.get("targa", "-")
             }
 
-# --- 6. RENDERIZZAZIONE MAPPA E CALCOLO CALIBRAZIONE ---
+# --- 6. RENDERIZZAZIONE MAPPA E APPLICAZIONE CALIBRAZIONE ---
 img = Image.open("mappa.png")
 
 scelte_x, scelte_y, colori, testi, chiavi_posto = [], [], [], [], []
@@ -131,7 +124,7 @@ scelte_x, scelte_y, colori, testi, chiavi_posto = [], [], [], [], []
 for codice_posto, coord in POSTI.items():
     chiavi_posto.append(codice_posto)
     
-    # Applichiamo la calibrazione matematica in tempo reale
+    # La calibrazione viene ora calcolata automaticamente con i valori fissi
     x_calibrato = (coord["x"] * scale_x) + offset_x
     y_calibrato = (coord["y"] * scale_y) + offset_y
     
@@ -160,17 +153,10 @@ fig.add_trace(go.Scatter(
     customdata=chiavi_posto
 ))
 
-# Vincolo l'immagine a proporzioni costanti
 fig.update_xaxes(range=[0, img.width], showgrid=False, zeroline=False, visible=False, constrain="domain")
 fig.update_yaxes(range=[img.height, 0], showgrid=False, zeroline=False, visible=False, scaleanchor="x", scaleratio=1)
 
-fig.update_layout(
-    margin=dict(l=0, r=0, t=0, b=0),
-    clickmode="event+select"
-)
-
-if is_admin:
-    st.info(f"**🛠️ Valori attuali da comunicarmi:** Scala X: **{scale_x:.2f}** | Scala Y: **{scale_y:.2f}** | Offset X: **{offset_x}** | Offset Y: **{offset_y}**")
+fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select")
 
 st.subheader(f"Situazione Parcheggi per il giorno: {data_str}")
 config = {'displayModeBar': False}

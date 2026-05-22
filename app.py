@@ -1,4 +1,5 @@
 import streamlit as st
+import datetime
 from datetime import date
 from supabase import create_client, Client
 import plotly.graph_objects as go
@@ -9,6 +10,22 @@ import os
 url: str = st.secrets["SUPABASE_URL"]
 key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
+
+# --- CONFIGURAZIONE RESTRIZIONI GRUPPI (PUNTO 3) ---
+# 0=Lunedì, 1=Martedì, 2=Mercoledì, 3=Giovedì, 4=Venerdì, 5=Sabato, 6=Domenica
+RESTRIZIONI_GRUPPI = {
+    "Marketing 1":   {"giorni_consentiti": [0, 1, 2], "max_posti": 5}, # Esempio: Lun, Mar, Mer | Max 5 posti
+    "Marketing 2":   {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
+    "Agro 1":         {"giorni_consentiti": [2, 3, 4], "max_posti": 4}, # Esempio: Mer, Gio, Ven | Max 4 posti
+    "Agro 2":         {"giorni_consentiti": [2, 3, 4], "max_posti": 4},
+    "Food 1":         {"giorni_consentiti": [0, 1, 4], "max_posti": 3},
+    "Food 2":         {"giorni_consentiti": [0, 1, 4], "max_posti": 3},
+    "Zootecnia 1":    {"giorni_consentiti": [1, 2, 3], "max_posti": 4},
+    "Zootecnia 2":    {"giorni_consentiti": [1, 2, 3], "max_posti": 4},
+    "Viticoltura 1":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
+    "Viticoltura 2":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
+    # Nota: Il gruppo 'Alloggi' ha la finestra di 2 settimane (Punto 2) ma non ha limiti di gruppo o di giorno (Punto 3)
+}
 
 # --- 2. CONFIGURAZIONE INTERFACCIA ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
@@ -48,12 +65,31 @@ st.sidebar.write(f"Gruppo: **{gruppo_utente}**")
 st.sidebar.divider()
 st.sidebar.subheader("📅 Seleziona il Giorno")
 oggi = date.today()
-data_scelta = st.sidebar.date_input("Vedi prenotazioni del:", min_value=oggi)
+
+# --- CONTROLLO FINESTRA PRENOTAZIONI 2 SETTIMANE (PUNTO 2) ---
+gruppi_con_finestra = [
+    "Alloggi", "Marketing 1", "Marketing 2", "Agro 1", "Agro 2", 
+    "Food 1", "Food 2", "Zootecnia 1", "Zootecnia 2", "Viticoltura 1", "Viticoltura 2"
+]
+
+if gruppo_utente in gruppi_con_finestra and not is_admin:
+    max_data = oggi + datetime.timedelta(days=14) # Massimo 2 settimane in avanti
+else:
+    max_data = oggi + datetime.timedelta(days=365) # Personale e Admin non hanno limiti restrittivi
+
+data_scelta = st.sidebar.date_input("Vedi prenotazioni del:", min_value=oggi, max_value=max_data)
 data_str = data_scelta.strftime("%Y-%m-%d")
 
 if st.sidebar.button("Log out ❌"):
     st.session_state["utente_autenticato"] = None
     st.rerun()
+
+# --- AUTO-ANNULLAMENTO IL GIORNO DOPO (PUNTO 2) ---
+# Elimina automaticamente dal database tutte le prenotazioni passate per liberare spazio
+try:
+    supabase.table("prenotazioni").delete().lt("data", oggi.strftime("%Y-%m-%d")).execute()
+except Exception:
+    pass
 
 # --- 4. CALIBRAZIONE MAPPA DEFINITIVA ---
 scale_x = 1.22
@@ -105,7 +141,8 @@ POSTI = {
 
 # --- 5. RECUPERO PRENOTAZIONI DEL GIORNO ---
 prenotazioni_giorno = {}
-risposta_p = supabase.table("prenotazioni").select("posto_id, utenti(username, targa)").eq("data", data_str).execute()
+# Estraiamo anche la colonna 'gruppo' della tabella utenti per calcolare i massimi di gruppo
+risposta_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, utenti(username, targa, gruppo)").eq("data", data_str).execute()
 
 if risposta_p.data:
     for p in risposta_p.data:
@@ -113,8 +150,11 @@ if risposta_p.data:
         if p_id:
             info_u = p.get("utenti") or {}
             prenotazioni_giorno[p_id] = {
+                "id_prenotazione": p.get("id"),
+                "utente_id": p.get("utente_id"),
                 "username": info_u.get("username", "Occupato"),
-                "targa": info_u.get("targa", "-")
+                "targa": info_u.get("targa", "-"),
+                "gruppo": info_u.get("gruppo", "")
             }
 
 # --- 6. COSTRUZIONE E DISEGNO DELLA MAPPA ---
@@ -130,8 +170,11 @@ for codice_posto, coord in POSTI.items():
     
     if codice_posto in prenotazioni_giorno:
         colori.append("red")
-        if is_admin or gruppo_utente == "Personale":
-            testi.append(f"⛔ {codice_posto}<br>Occupato da: {prenotazioni_giorno[codice_posto]['username']}")
+        info_p = prenotazioni_giorno[codice_posto]
+        if info_p["username"].lower() == "admin":
+            testi.append(f"⛔ {codice_posto} (NON DISPONIBILE)")
+        elif is_admin or gruppo_utente == "Personale":
+            testi.append(f"⛔ {codice_posto}<br>Occupato da: {info_p['username']} ({info_p['gruppo']})")
         else:
             testi.append(f"⛔ {codice_posto} (Occupato)")
     else:
@@ -155,27 +198,27 @@ fig.update_layout(height=850, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+
 st.subheader(f"Mappa Parcheggi per il giorno: {data_str}")
 config = {'displayModeBar': False}
 
-# CORREZIONE: Usiamo "ignore" al posto di None per evitare l'eccezione Streamlit
-is_personale = (gruppo_utente == "Personale")
-click_data = st.plotly_chart(fig, use_container_width=True, on_select="rerun" if is_personale else "ignore", config=config)
+# Abilitiamo l'interazione sulla mappa sia per il Personale che per l'Admin (Punto 1)
+mappa_interattiva = (gruppo_utente == "Personale" or is_admin)
+click_data = st.plotly_chart(fig, use_container_width=True, on_select="rerun" if mappa_interattiva else "ignore", config=config)
 
-# --- 7. LOGICA ASSEGNAZIONE E PRENOTAZIONE DIZIONARIATA ---
+# --- 7. LOGICA ASSEGNAZIONE E PRENOTAZIONE ---
 if not is_admin:
     ha_gia_prenotato = supabase.table("prenotazioni").select("id, posto_id").eq("utente_id", utente_loggato["id"]).eq("data", data_str).execute()
     
     if ha_gia_prenotato.data:
         posto_occupato_ora = ha_gia_prenotato.data[0]["posto_id"]
-        st.warning(f"🏷️ Hai già riservato il posto automatico o manuale: **{posto_occupato_ora}** per oggi.")
+        st.warning(f"🏷️ Hai già riservato il posto: **{posto_occupato_ora}** per oggi.")
         if st.button("Cancella la mia prenotazione ❌", use_container_width=True):
             supabase.table("prenotazioni").delete().eq("id", ha_gia_prenotato.data[0]["id"]).execute()
             st.success("Prenotazione annullata con successo!")
             st.rerun()
             
     else:
-        # CASO A: IL PERSONALE (SCEGLIE DA MAPPA)
+        # CASO A: IL PERSONALE (SCEGLIE DA MAPPA LIBERAMENTE)
         if gruppo_utente == "Personale":
             st.info("💡 **Modalità Personale:** Fai click direttamente su un pallino **VERDE** nella mappa per selezionare la tua area.")
-            if click_data and "selection" in click_data and click_data["selection"]["points"]:
+            if click_data and "selection" in click_data pinning and click_data["selection"]["points"]:
                 punto_cliccato = click_data["selection"]["points"][0]
                 indice_punto = punto_cliccato.get("point_index", punto_cliccato.get("pointNumber"))
                 
@@ -188,11 +231,11 @@ if not is_admin:
                             st.success(f"Posto {posto_scelto} riservato!")
                             st.rerun()
                     else:
-                        st.error("Posto già occupato, scegline un altro.")
+                        st.error("Posto già occupato o non disponibile, scegline un altro.")
 
         # CASO B: GLI ALLOGGI (ASSEGNAZIONE AUTOMATICA)
         elif gruppo_utente == "Alloggi":
-            st.info("ℹ️ I membri del gruppo Alloggi ricevono un posto automatico nella zona verde.")
+            st.info("ℹ️ I membri del gruppo Alloggi ricevono un posto automatico nella zona verde dedicata.")
             if st.button("Richiedi Assegnazione Posto Alloggi 🚗", use_container_width=True):
                 posti_alloggi = [k for k in POSTI.keys() if k.startswith("Alloggi-")]
                 posto_trovato = None
@@ -208,10 +251,28 @@ if not is_admin:
                 else:
                     st.error("❌ Purtroppo tutti i posti Alloggi sono esauriti per questa data.")
 
-        # CASO C: TUTTI GLI ALTRI GRUPPI (AUTOMATICI)
+        # CASO C: TUTTI GLI ALTRI GRUPPI CON RESTRIZIONI DI GIORNO E TETTO MASSIMO (PUNTO 3)
         else:
+            if gruppo_utente in RESTRIZIONI_GRUPPI:
+                restrizione = RESTRIZIONI_GRUPPI[gruppo_utente]
+                giorno_settimana = data_scelta.weekday()
+                nomi_giorni = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+                
+                # 1. Controllo giorni della settimana consentiti
+                if giorno_settimana not in restrizione["giorni_consentiti"]:
+                    giorni_ok = ", ".join([nomi_giorni[g] for g in restrizione["giorni_consentiti"]])
+                    st.error(f"❌ Il gruppo **{gruppo_utente}** non può prenotare di {nomi_giorni[giorno_settimana]}. Giorni consentiti: **{giorni_ok}**")
+                    st.stop()
+                
+                # 2. Controllo numero massimo di posti occupati dal gruppo oggi
+                posti_occupati_dal_gruppo = sum(1 for info in prenotazioni_giorno.values() if info["gruppo"] == gruppo_utente)
+                if posti_occupati_dal_gruppo >= restrizione["max_posti"]:
+                    st.error(f"❌ Limite raggiunto! Il tuo gruppo (**{gruppo_utente}**) ha già esaurito la quota massima di **{restrizione['max_posti']}** parcheggi per oggi.")
+                    st.stop()
+            
             st.info(f"ℹ️ Come membro del gruppo **{gruppo_utente}**, il sistema ti assegnerà automaticamente un posto libero tra la Zona Studenti, Bassa o Alta.")
             if st.button("Richiedi Assegnazione Posto Auto 🚗", use_container_width=True):
+                # Escludiamo i posti riservati agli alloggi
                 posti_comuni = [k for k in POSTI.keys() if not k.startswith("Alloggi-")]
                 posto_trovato = None
                 for p in posti_comuni:
@@ -226,11 +287,51 @@ if not is_admin:
                 else:
                     st.error("❌ Posti auto esauriti per oggi nelle zone Studenti/Bassa/Alta.")
 
+# --- PANNELLO DI CONTROLLO AMMINISTRATORE (PUNTO 1) ---
 else:
     st.divider()
-    st.subheader("📋 Pannello di Controllo Amministratore")
+    st.subheader("🛠️ Strumenti di Amministrazione Mappa")
+    st.info("💡 **Istruzioni Admin:** Fai click su un pallino **VERDE** sulla mappa per bloccarlo (renderlo Non Disponibile). Clicca su un pallino **ROSSO** per sbloccarlo o forzare la cancellazione.")
+    
+    if click_data and "selection" in click_data and click_data["selection"]["points"]:
+        punto_cliccato = click_data["selection"]["points"][0]
+        indice_punto = punto_cliccato.get("point_index", punto_cliccato.get("pointNumber"))
+        
+        if indice_punto is not None and indice_punto < len(chiavi_posto):
+            posto_scelto = chiavi_posto[indice_punto]
+            
+            # Se il posto è libero, l'admin lo blocca
+            if posto_scelto not in prenotazioni_giorno:
+                st.success(f"Hai selezionato il posto libero: **{posto_scelto}**")
+                if st.button(f"Rendi NON DISPONIBILE il posto {posto_scelto} ⛔", use_container_width=True):
+                    supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_scelto}).execute()
+                    st.success(f"Posto {posto_scelto} bloccato!")
+                    st.rerun()
+            # Se il posto è già occupato/bloccato, l'admin lo sblocca
+            else:
+                info_p = prenotazioni_giorno[posto_scelto]
+                nome_occ = info_p["username"]
+                
+                if nome_occ.lower() == "admin":
+                    st.warning(f"Il posto **{posto_scelto}** è attualmente impostato come NON DISPONIBILE.")
+                    if st.button(f"Rendi nuovamente DISPONIBILE il posto {posto_scelto} 🔓", use_container_width=True):
+                        supabase.table("prenotazioni").delete().eq("id", info_p["id_prenotazione"]).execute()
+                        st.success(f"Posto {posto_scelto} sbloccato!")
+                        st.rerun()
+                else:
+                    st.warning(f"Il posto **{posto_scelto}** è prenotato da: **{nome_occ}** (Gruppo: {info_p['gruppo']})")
+                    if st.button(f"Cancella d'autorità la prenotazione di {nome_occ} 🗑️", use_container_width=True):
+                        supabase.table("prenotazioni").delete().eq("id", info_p["id_prenotazione"]).execute()
+                        st.success(f"Prenotazione rimossa con successo!")
+                        st.rerun()
+
+    st.divider()
+    st.subheader("📋 Registro Generale Prenotazioni del Giorno")
     if prenotazioni_giorno:
         for p_id, info in prenotazioni_giorno.items():
-            st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Targa: {info['targa']})")
+            if info['username'].lower() == 'admin':
+                st.write(f"🚫 Posto **{p_id}** ➔ **NON DISPONIBILE** (Bloccato dall'Amministratore)")
+            else:
+                st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Gruppo: *{info['gruppo']}* | Targa: {info['targa']})")
     else:
-        st.info("Nessun posto occupato in questa data.")
+        st.info("Nessuna prenotazione o blocco registrato per questa data.")

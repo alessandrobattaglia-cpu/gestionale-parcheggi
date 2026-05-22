@@ -12,7 +12,7 @@ supabase: Client = create_client(url, key)
 
 # --- 2. CONFIGURAZIONE INTERFACCIA ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
-st.title("🚗 Parcheggi Symposium - Mappa Interattiva")
+st.title("🚗 Parcheggi Symposium - Gestione Assegnazioni")
 
 if "utente_autenticato" not in st.session_state:
     st.session_state["utente_autenticato"] = None
@@ -25,7 +25,8 @@ if st.session_state["utente_autenticato"] is None:
         password_inserita = st.text_input("Password:", type="password")
         if st.form_submit_button("Accedi 🔓", use_container_width=True):
             if username_inserito and password_inserita:
-                risposta = supabase.table("utenti").select("id, username, targa, gruppo_id").eq("username", username_inserito).eq("password", password_inserita).execute()
+                # Recuperiamo direttamente la colonna di testo 'gruppo'
+                risposta = supabase.table("utenti").select("id, username, targa, gruppo").eq("username", username_inserito).eq("password", password_inserita).execute()
                 if risposta.data:
                     st.session_state["utente_autenticato"] = risposta.data[0]
                     st.rerun()
@@ -37,11 +38,13 @@ if st.session_state["utente_autenticato"] is None:
 
 utente_loggato = st.session_state["utente_autenticato"]
 username = utente_loggato["username"]
+gruppo_utente = utente_loggato.get("gruppo", "Marketing 1") # Default se vuoto
 is_admin = (username.lower() == "admin")
 
 # Sidebar di controllo
 st.sidebar.header("👤 Account")
 st.sidebar.write(f"Utente: **{username}**")
+st.sidebar.write(f"Gruppo: **{gruppo_utente}**")
 
 st.sidebar.divider()
 st.sidebar.subheader("📅 Seleziona il Giorno")
@@ -53,7 +56,7 @@ if st.sidebar.button("Log out ❌"):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# --- 4. VALORI DI CALIBRAZIONE VALIDI E DEFINITIVI ---
+# --- 4. CALIBRAZIONE MAPPA DEFINITIVA ---
 scale_x = 1.22
 scale_y = 0.98
 offset_x = 15
@@ -79,20 +82,13 @@ POSTI = {
     "Studenti-11": {"x": 510, "y": 690}, "Studenti-12": {"x": 510, "y": 750},
     "Studenti-13": {"x": 510, "y": 810}, "Studenti-14": {"x": 510, "y": 870},
     
-    "Alloggi-13": {"x": 59.8, "y": 739.9}, 
-    "Alloggi-12": {"x": 59.8, "y": 777.6}, 
-    "Alloggi-11": {"x": 59.8, "y": 815.6}, 
-    "Alloggi-10": {"x": 59.8, "y": 853.8}, 
-    "Alloggi-9":  {"x": 59.8, "y": 890.5}, 
-    "Alloggi-8":  {"x": 59.8, "y": 927.6}, 
-    "Alloggi-7":  {"x": 59.8, "y": 965.8}, 
-    "Alloggi-6":  {"x": 59.8, "y": 1004.8},
-
-    "Alloggi-5": {"x": 196.6, "y": 982.0}, 
-    "Alloggi-4": {"x": 251.6, "y": 982.0}, 
-    "Alloggi-3": {"x": 306.4, "y": 982.0}, 
-    "Alloggi-2": {"x": 361.9, "y": 982.0}, 
-    "Alloggi-1": {"x": 415.5, "y": 982.0},
+    "Alloggi-13": {"x": 59.8, "y": 739.9}, "Alloggi-12": {"x": 59.8, "y": 777.6}, 
+    "Alloggi-11": {"x": 59.8, "y": 815.6}, "Alloggi-10": {"x": 59.8, "y": 853.8}, 
+    "Alloggi-9":  {"x": 59.8, "y": 890.5}, "Alloggi-8":  {"x": 59.8, "y": 927.6}, 
+    "Alloggi-7":  {"x": 59.8, "y": 965.8}, "Alloggi-6":  {"x": 59.8, "y": 1004.8},
+    "Alloggi-5":  {"x": 196.6, "y": 982.0}, "Alloggi-4": {"x": 251.6, "y": 982.0}, 
+    "Alloggi-3":  {"x": 306.4, "y": 982.0}, "Alloggi-2": {"x": 361.9, "y": 982.0}, 
+    "Alloggi-1":  {"x": 415.5, "y": 982.0},
     
     "Alta-1": {"x": 845, "y": 502}, "Alta-2": {"x": 845, "y": 537},
     "Alta-3": {"x": 845, "y": 572}, "Alta-4": {"x": 845, "y": 607},
@@ -108,7 +104,7 @@ POSTI = {
     "Alta-20": {"x": 1065, "y": 888}
 }
 
-# --- 5. RECUPERO PRENOTAZIONI ---
+# --- 5. RECUPERO PRENOTAZIONI DEL GIORNO ---
 prenotazioni_giorno = {}
 risposta_p = supabase.table("prenotazioni").select("posto_id, utenti(username, targa)").eq("data", data_str).execute()
 
@@ -122,33 +118,29 @@ if risposta_p.data:
                 "targa": info_u.get("targa", "-")
             }
 
-# --- 6. RENDERIZZAZIONE MAPPA E APPLICAZIONE CALIBRAZIONE ---
+# --- 6. COSTRUZIONE E DISEGNO DELLA MAPPA MAPPA ---
 img = Image.open("mappa.png")
-
 scelte_x, scelte_y, colori, testi, chiavi_posto = [], [], [], [], []
 
 for codice_posto, coord in POSTI.items():
     chiavi_posto.append(codice_posto)
-    
     x_calibrato = (coord["x"] * scale_x) + offset_x
     y_calibrato = (coord["y"] * scale_y) + offset_y
-    
     scelte_x.append(x_calibrato)
     scelte_y.append(y_calibrato)
     
     if codice_posto in prenotazioni_giorno:
         colori.append("red")
-        if is_admin:
-            testi.append(f"⛔ {codice_posto}<br>Occupato da: {prenotazioni_giorno[codice_posto]['username']}<br>Targa: {prenotazioni_giorno[codice_posto]['targa']}")
+        if is_admin or gruppo_utente == "Personale":
+            testi.append(f"⛔ {codice_posto}<br>Occupato da: {prenotazioni_giorno[codice_posto]['username']}")
         else:
             testi.append(f"⛔ {codice_posto} (Occupato)")
     else:
         colori.append("green")
-        testi.append(f"🟢 {codice_posto} (Libero - Clicca per prenotare)")
+        testi.append(f"🟢 {codice_posto} (Libero)")
 
 fig = go.Figure()
 fig.add_trace(go.Image(z=img))
-
 fig.add_trace(go.Scatter(
     x=scelte_x, y=scelte_y,
     mode="markers",
@@ -157,60 +149,92 @@ fig.add_trace(go.Scatter(
     hoverinfo="text",
     customdata=chiavi_posto
 ))
-
 fig.update_xaxes(range=[0, img.width], showgrid=False, zeroline=False, visible=False, constrain="domain")
 fig.update_yaxes(range=[img.height, 0], showgrid=False, zeroline=False, visible=False, scaleanchor="x", scaleratio=1)
+fig.update_layout(height=850, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select")
 
-fig.update_layout(
-    height=850, 
-    margin=dict(l=0, r=0, t=0, b=0), 
-    clickmode="event+select"
-)
-
-st.subheader(f"Situazione Parcheggi per il giorno: {data_str}")
+st.subheader(f"Mappa Parcheggi per il giorno: {data_str}")
 config = {'displayModeBar': False}
-click_data = st.plotly_chart(fig, use_container_width=True, on_select="rerun", config=config)
 
-# --- 7. LOGICA PRENOTAZIONE CORRETTA ---
+# Solo il Personale può interagire cliccando sulla mappa, per gli altri è bloccata a schermo (clickmode gestito dinamicamente)
+is_personale = (gruppo_utente == "Personale")
+click_data = st.plotly_chart(fig, use_container_width=True, on_select="rerun" if is_personale else None, config=config)
+
+# --- 7. LOGICA ASSEGNAZIONE E PRENOTAZIONE DIZIONARIATA ---
 if not is_admin:
+    # Controlla se l'utente loggato ha già una prenotazione per oggi
     ha_gia_prenotato = supabase.table("prenotazioni").select("id, posto_id").eq("utente_id", utente_loggato["id"]).eq("data", data_str).execute()
     
     if ha_gia_prenotato.data:
         posto_occupato_ora = ha_gia_prenotato.data[0]["posto_id"]
-        st.warning(f"🏷️ Hai già riservato il posto **{posto_occupato_ora}** per oggi.")
+        st.warning(f"🏷️ Hai già riservato il posto automatico o manuale: **{posto_occupato_ora}** per oggi.")
         if st.button("Cancella la mia prenotazione ❌", use_container_width=True):
             supabase.table("prenotazioni").delete().eq("id", ha_gia_prenotato.data[0]["id"]).execute()
-            st.success("Prenotazione cancellata!")
+            st.success("Prenotazione annullata con successo!")
             st.rerun()
+            
     else:
-        st.info("💡 **Come prenotare:** Fai click su un pallino **VERDE** direttamente sulla mappa per scegliere il tuo posto.")
-        
-        if click_data and "selection" in click_data and click_data["selection"]["points"]:
-            punto_cliccato = click_data["selection"]["points"][0]
-            
-            # SOLUZIONE: Cerchiamo 'point_index' (Streamlit nativo) con fallback su 'pointNumber'
-            indice_punto = punto_cliccato.get("point_index", punto_cliccato.get("pointNumber"))
-            
-            if indice_punto is not None and indice_punto < len(chiavi_posto):
-                posto_scelto = chiavi_posto[indice_punto]
+        # CASO A: IL PERSONALE (SCEGLIE DA MAPPA)
+        if gruppo_utente == "Personale":
+            st.info("💡 **Modalità Personale:** Fai click direttamente su un pallino **VERDE** nella mappa per selezionare la tua area.")
+            if click_data and "selection" in click_data and click_data["selection"]["points"]:
+                punto_cliccato = click_data["selection"]["points"][0]
+                indice_punto = punto_cliccato.get("point_index", punto_cliccato.get("pointNumber"))
                 
-                if posto_scelto not in prenotazioni_giorno:
-                    st.success(f"Hai selezionato il posto: **{posto_scelto}**")
-                    if st.button(f"Conferma Prenotazione Posto {posto_scelto} 🟢", use_container_width=True):
-                        supabase.table("prenotazioni").insert({
-                            "utente_id": utente_loggato["id"],
-                            "data": data_str,
-                            "posto_id": posto_scelto
-                        }).execute()
-                        st.success(f"Posto {posto_scelto} prenotato!")
-                        st.rerun()
+                if indice_punto is not None and indice_punto < len(chiavi_posto):
+                    posto_scelto = chiavi_posto[indice_punto]
+                    if posto_scelto not in prenotazioni_giorno:
+                        st.success(f"Hai selezionato il posto: **{posto_scelto}**")
+                        if st.button(f"Conferma Prenotazione Posto {posto_scelto} 🟢", use_container_width=True):
+                            supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_scelto}).execute()
+                            st.success(f"Posto {posto_scelto} riservato!")
+                            st.rerun()
+                    else:
+                        st.error("Posto già occupato, scegline un altro.")
+
+        # CASO B: GLI ALLOGGI (ASSEGNAZIONE AUTOMATICA)
+        elif gruppo_utente == "Alloggi":
+            st.info("ℹ️ I membri del gruppo Alloggi ricevono un posto automatico nella zona verde.")
+            if st.button("Richiedi Assegnazione Posto Alloggi 🚗", use_container_width=True):
+                # Filtra solo i posti che iniziano con Alloggi-
+                posti_alloggi = [k for k in POSTI.keys() if k.startswith("Alloggi-")]
+                posto_trovato = None
+                for p in posti_alloggi:
+                    if p not in prenotazioni_giorno:
+                        posto_trovato = p
+                        break
+                
+                if posto_trovato:
+                    supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_trovato}).execute()
+                    st.success(f"🎉 Sistema: Ti è stato assegnato il posto **{posto_trovato}**!")
+                    st.rerun()
                 else:
-                    st.error("Questo posto è stato appena occupato. Scegline un altro verde.")
+                    st.error("❌ Purtroppo tutti i posti Alloggi sono esauriti per questa data.")
+
+        # CASO C: TUTTI GLI ALTRI GRUPPI (STUDENTI, BASSA, ALTA AUTOMATICI)
+        else:
+            st.info(f"ℹ️ Come membro del gruppo **{gruppo_utente}**, il sistema ti assegnerà automaticamente un posto libero tra la Zona Studenti, Bassa o Alta.")
+            if st.button("Richiedi Assegnazione Posto Auto 🚗", use_container_width=True):
+                # Filtra escludendo gli Alloggi
+                posti_comuni = [k for k in POSTI.keys() if not k.startswith("Alloggi-")]
+                posto_trovato = None
+                for p in posti_comuni:
+                    if p not in prenotazioni_giorno:
+                        posto_trovato = p
+                        break
+                
+                if posto_trovato:
+                    supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_trovato}).execute()
+                    st.success(f"🎉 Sistema: Ti è stato assegnato il posto **{posto_trovato}**!")
+                    st.rerun()
+                else:
+                    st.error("❌ Posti auto esauriti per oggi nelle zone Studenti/Bassa/Alta.")
+
 else:
     st.divider()
-    st.subheader("📋 Riepilogo rapido admin")
+    st.subheader("📋 Pannello di Controllo Amministratore")
     if prenotazioni_giorno:
         for p_id, info in prenotazioni_giorno.items():
-            st.write(f"🚗 Posto **{p_id}** -> Occupato da **{info['username']}** (Targa: {info['targa']})")
+            st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Targa: {info['targa']})")
     else:
-        st.info("Nessun posto occupato in questa data.")
+        st.info("Nessuna prenotazione effettuata per questa giornata.")

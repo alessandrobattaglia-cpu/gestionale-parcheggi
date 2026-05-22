@@ -79,7 +79,6 @@ POSTI = {
     "Studenti-11": {"x": 510, "y": 690}, "Studenti-12": {"x": 510, "y": 750},
     "Studenti-13": {"x": 510, "y": 810}, "Studenti-14": {"x": 510, "y": 870},
     
-    # ZONA ALLOGGI (COLONNA VERDE): Coordinate corrette e centrate al millimetro
     "Alloggi-13": {"x": 59.8, "y": 739.9}, 
     "Alloggi-12": {"x": 59.8, "y": 777.6}, 
     "Alloggi-11": {"x": 59.8, "y": 815.6}, 
@@ -89,7 +88,6 @@ POSTI = {
     "Alloggi-7":  {"x": 59.8, "y": 965.8}, 
     "Alloggi-6":  {"x": 59.8, "y": 1004.8},
 
-    # ZONA ALLOGGI (RIGA VERDE IN BASSO): Coordinate corrette e allineate perfettamente
     "Alloggi-5": {"x": 196.6, "y": 982.0}, 
     "Alloggi-4": {"x": 251.6, "y": 982.0}, 
     "Alloggi-3": {"x": 306.4, "y": 982.0}, 
@@ -127,7 +125,7 @@ if risposta_p.data:
 # --- 6. RENDERIZZAZIONE MAPPA E APPLICAZIONE CALIBRAZIONE ---
 img = Image.open("mappa.png")
 
-scelte_x, scelte_y, colori, testi, chiavi_posto = [], [], [], [], []
+scelte_x, choices_y, colori, testi, chiavi_posto = [], [], [], [], []
 
 for codice_posto, coord in POSTI.items():
     chiavi_posto.append(codice_posto)
@@ -136,7 +134,7 @@ for codice_posto, coord in POSTI.items():
     y_calibrato = (coord["y"] * scale_y) + offset_y
     
     scelte_x.append(x_calibrato)
-    scelte_y.append(y_calibrato)
+    choices_y.append(y_calibrato)
     
     if codice_posto in prenotazioni_giorno:
         colori.append("red")
@@ -152,7 +150,7 @@ fig = go.Figure()
 fig.add_trace(go.Image(z=img))
 
 fig.add_trace(go.Scatter(
-    x=scelte_x, y=scelte_y,
+    x=scelte_x, y=choices_y,
     mode="markers",
     marker=dict(size=14, color=colori, line=dict(width=1.5, color="white")),
     text=testi,
@@ -163,7 +161,12 @@ fig.add_trace(go.Scatter(
 fig.update_xaxes(range=[0, img.width], showgrid=False, zeroline=False, visible=False, constrain="domain")
 fig.update_yaxes(range=[img.height, 0], showgrid=False, zeroline=False, visible=False, scaleanchor="x", scaleratio=1)
 
-fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select")
+# Ottimizzazione altezza: impostiamo 850 pixel fissi per dare spazio all'immagine di respirare ed essere nitida
+fig.update_layout(
+    height=850, 
+    margin=dict(l=0, r=0, t=0, b=0), 
+    clickmode="event+select"
+)
 
 st.subheader(f"Situazione Parcheggi per il giorno: {data_str}")
 config = {'displayModeBar': False}

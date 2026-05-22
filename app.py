@@ -52,58 +52,64 @@ if st.sidebar.button("Log out ❌"):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# --- 4. DATABASE COORDINATE DI TUTTI I POSTI (Docenti Esclusi) ---
+# --- 4. COORDINATE REALI CALIBRATE AL MILLIMETRO SUI QUADRATI (X, Y) ---
 POSTI = {
-    # ZONA BASSA (Viola inclinato in alto - Calcolati lungo la diagonale)
-    "Bassa-1": {"x": 35, "y": 235}, "Bassa-2": {"x": 67, "y": 218},
-    "Bassa-3": {"x": 98, "y": 202}, "Bassa-4": {"x": 133, "y": 185},
-    "Bassa-5": {"x": 164, "y": 170}, "Bassa-6": {"x": 195, "y": 155},
-    "Bassa-7": {"x": 226, "y": 139}, "Bassa-8": {"x": 257, "y": 124},
-    "Bassa-9": {"x": 288, "y": 109}, "Bassa-10": {"x": 319, "y": 94},
-    "Bassa-11": {"x": 350, "y": 79}, "Bassa-12": {"x": 381, "y": 64},
-    "Bassa-13": {"x": 412, "y": 49}, "Bassa-14": {"x": 444, "y": 34},
-    "Bassa-15": {"x": 475, "y": 19},
+    # ZONA BASSA (Fascia viola inclinata in alto)
+    "Bassa-1": {"x": 40, "y": 288},   "Bassa-2": {"x": 72, "y": 272},
+    "Bassa-3": {"x": 105, "y": 257},  "Bassa-4": {"x": 145, "y": 238},
+    "Bassa-5": {"x": 178, "y": 222},  "Bassa-6": {"x": 210, "y": 207},
+    "Bassa-7": {"x": 243, "y": 192},  "Bassa-8": {"x": 276, "y": 176},
+    "Bassa-9": {"x": 308, "y": 160},  "Bassa-10": {"x": 341, "y": 145},
+    "Bassa-11": {"x": 374, "y": 129}, "Bassa-12": {"x": 407, "y": 113},
+    "Bassa-13": {"x": 440, "y": 98},  "Bassa-14": {"x": 472, "y": 82},
+    "Bassa-15": {"x": 505, "y": 66},
 
-    # INGRESSO PIAZZALE (Azzurri inclinati alti)
-    "Piazzale-1": {"x": 450, "y": 113}, "Piazzale-2": {"x": 420, "y": 140},
-    "Piazzale-3": {"x": 395, "y": 175}, "Piazzale-4": {"x": 372, "y": 215},
-    "Piazzale-5": {"x": 350, "y": 255}, "Piazzale-6": {"x": 328, "y": 298},
+    # INGRESSO PIAZZALE (I 6 rettangoli azzurri obliqui vicino alla chiesa)
+    "Piazzale-1": {"x": 458, "y": 150}, "Piazzale-2": {"x": 418, "y": 178},
+    "Piazzale-3": {"x": 393, "y": 215}, "Piazzale-4": {"x": 370, "y": 255},
+    "Piazzale-5": {"x": 348, "y": 296}, "Piazzale-6": {"x": 382, "y": 360},
 
-    # ZONA CENTRALE STUDENTI (Azzurro verticale basso)
-    "Studenti-7": {"x": 472, "y": 355},
-    "Studenti-8": {"x": 445, "y": 425},
-    "Studenti-9": {"x": 445, "y": 485},
-    "Studenti-10": {"x": 445, "y": 530},
-    "Studenti-11": {"x": 445, "y": 575},
-    "Studenti-12": {"x": 445, "y": 622},
-    "Studenti-13": {"x": 445, "y": 668},
-    "Studenti-14": {"x": 445, "y": 715},
+    # ZONA CENTRALE STUDENTI (Rettangoli azzurri verticali)
+    "Studenti-7": {"x": 515, "y": 420},
+    "Studenti-8": {"x": 490, "y": 502},
+    "Studenti-9": {"x": 510, "y": 570},
+    "Studenti-10": {"x": 510, "y": 630},
+    "Studenti-11": {"x": 510, "y": 690},
+    "Studenti-12": {"x": 510, "y": 750},
+    "Studenti-13": {"x": 510, "y": 810},
+    "Studenti-14": {"x": 510, "y": 870},
     
-    # ZONA CENTRALE ALLOGGI (Verde colonna sinistra - Esclusi i primi Docenti)
-    "Alloggi-6": {"x": 58, "y": 810}, "Alloggi-7": {"x": 58, "y": 768},
-    "Alloggi-8": {"x": 58, "y": 725}, "Alloggi-9": {"x": 58, "y": 682},
-    "Alloggi-10": {"x": 58, "y": 640}, "Alloggi-11": {"x": 58, "y": 598},
-    "Alloggi-12": {"x": 58, "y": 555}, "Alloggi-13": {"x": 58, "y": 512},
+    # ZONA CENTRALE ALLOGGI (Colonna verde a sinistra, sotto i docenti)
+    "Alloggi-13": {"x": 68, "y": 665},
+    "Alloggi-12": {"x": 68, "y": 725},
+    "Alloggi-11": {"x": 68, "y": 782},
+    "Alloggi-10": {"x": 68, "y": 840},
+    "Alloggi-9":  {"x": 68, "y": 900},
+    "Alloggi-8":  {"x": 68, "y": 958},
+    "Alloggi-7":  {"x": 68, "y": 1018},
+    "Alloggi-6":  {"x": 68, "y": 1075},
 
-    # ZONA CENTRALE ALLOGGI (Verde riga orizzontale in basso)
-    "Alloggi-5": {"x": 182, "y": 828}, "Alloggi-4": {"x": 228, "y": 828},
-    "Alloggi-3": {"x": 275, "y": 828}, "Alloggi-2": {"x": 322, "y": 828},
-    "Alloggi-1": {"x": 369, "y": 828},
+    # ZONA CENTRALE ALLOGGI (Riga verde orizzontale in basso)
+    "Alloggi-5": {"x": 195, "y": 1025},
+    "Alloggi-4": {"x": 268, "y": 1025},
+    "Alloggi-3": {"x": 340, "y": 1025},
+    "Alloggi-2": {"x": 412, "y": 1025},
+    "Alloggi-1": {"x": 482, "y": 1025},
     
-    # ZONA ALTA (Arancione a destra - Colonna 1)
-    "Alta-1": {"x": 742, "y": 412}, "Alta-2": {"x": 742, "y": 440},
-    "Alta-3": {"x": 742, "y": 468}, "Alta-4": {"x": 742, "y": 496},
-    "Alta-5": {"x": 742, "y": 524}, "Alta-6": {"x": 742, "y": 552},
-    "Alta-7": {"x": 742, "y": 580},
+    # ZONA ALTA (Blocco arancione centrale a destra - Posti da 1 a 7)
+    "Alta-1": {"x": 845, "y": 502}, "Alta-2": {"x": 845, "y": 537},
+    "Alta-3": {"x": 845, "y": 572}, "Alta-4": {"x": 845, "y": 607},
+    "Alta-5": {"x": 845, "y": 642}, "Alta-6": {"x": 845, "y": 677},
+    "Alta-7": {"x": 845, "y": 712},
     
-    # ZONA ALTA (Arancione a destra - Colonna 2)
-    "Alta-8": {"x": 940, "y": 382}, "Alta-9": {"x": 940, "y": 408},
-    "Alta-10": {"x": 940, "y": 434}, "Alta-11": {"x": 940, "y": 460},
-    "Alta-12": {"x": 940, "y": 486}, "Alta-13": {"x": 940, "y": 512},
-    "Alta-14": {"x": 940, "y": 538}, "Alta-15": {"x": 940, "y": 564},
-    "Alta-16": {"x": 940, "y": 590}, "Alta-17": {"x": 940, "y": 616},
-    "Alta-18": {"x": 940, "y": 642}, "Alta-19": {"x": 940, "y": 668},
-    "Alta-20": {"x": 940, "y": 694}
+    # ZONA ALTA (Colonna arancione stretta a destra - Posti da 8 a 20)
+    "Alta-8":  {"x": 1065, "y": 456}, "Alta-9":  {"x": 1065, "y": 492},
+    "Alta-10": {"x": 1065, "y": 528}, "Alta-11": {"x": 1065, "y": 564},
+    "Alta-12": {"x": 1065, "y": 600}, "Alta-13": {"x": 1065, "y": 636},
+    "Alta-14": {"x": 1065, "y": 672}, "Alta-15": {"x": 1065, "y": 708},
+    "Alta-16": {"x": 1065, "y": 744}, "Alta-17": {"x": 1065, "y": 780},
+    "Alta-18": {"x": 1065, "y": 816}, "Alta-19": {"x": 1065, "y": 852},
+    "Alta-20": {"x": 1065, "y": 888}
 }
 
 # --- 5. RECUPERO PRENOTAZIONI ---
@@ -144,20 +150,24 @@ for codice_posto, coord in POSTI.items():
 fig = go.Figure()
 fig.add_trace(go.Image(z=img))
 
+# Disegno dei pallini sopra l'immagine
 fig.add_trace(go.Scatter(
     x=scelte_x, y=scelte_y,
     mode="markers",
-    marker=dict(size=14, color=colori, line=dict(width=1.5, color="white")),
+    marker=dict(size=18, color=colori, line=dict(width=2, color="white")),
     text=testi,
     hoverinfo="text",
     customdata=chiavi_posto
 ))
 
+# Vincoliamo gli assi cartesiani alle dimensioni esatte dell'immagine per non far fluttuare i punti
+fig.update_xaxes(range=[0, img.width], showgrid=False, zeroline=False, visible=False)
+fig.update_yaxes(range=[img.height, 0], showgrid=False, zeroline=False, visible=False)
+
 fig.update_layout(
     margin=dict(l=0, r=0, t=0, b=0),
-    xaxis=dict(visible=False),
-    yaxis=dict(visible=False),
-    clickmode="event+select"
+    clickmode="event+select",
+    height=800 # Altezza ottimale fissa per non schiacciare il rendering
 )
 
 st.subheader(f"Situazione Parcheggi per il giorno: {data_str}")

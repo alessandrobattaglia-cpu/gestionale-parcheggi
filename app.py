@@ -53,7 +53,7 @@ if st.sidebar.button("Log out ❌"):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# --- 4. VALORI DI CALIBRAZIONE DEFINITIVI FISSATI ---
+# --- 4. VALORI DI CALIBRAZIONE VALIDI E DEFINITIVI ---
 scale_x = 1.22
 scale_y = 0.98
 offset_x = 15
@@ -79,14 +79,22 @@ POSTI = {
     "Studenti-11": {"x": 510, "y": 690}, "Studenti-12": {"x": 510, "y": 750},
     "Studenti-13": {"x": 510, "y": 810}, "Studenti-14": {"x": 510, "y": 870},
     
-    "Alloggi-13": {"x": 68, "y": 665}, "Alloggi-12": {"x": 68, "y": 715},
-    "Alloggi-11": {"x": 68, "y": 765}, "Alloggi-10": {"x": 68, "y": 815},
-    "Alloggi-9":  {"x": 68, "y": 865}, "Alloggi-8":  {"x": 68, "y": 915},
-    "Alloggi-7":  {"x": 68, "y": 965}, "Alloggi-6":  {"x": 68, "y": 1015},
+    # ZONA ALLOGGI (COLONNA VERDE): Coordinate corrette e centrate al millimetro
+    "Alloggi-13": {"x": 59.8, "y": 739.9}, 
+    "Alloggi-12": {"x": 59.8, "y": 777.6}, 
+    "Alloggi-11": {"x": 59.8, "y": 815.6}, 
+    "Alloggi-10": {"x": 59.8, "y": 853.8}, 
+    "Alloggi-9":  {"x": 59.8, "y": 890.5}, 
+    "Alloggi-8":  {"x": 59.8, "y": 927.6}, 
+    "Alloggi-7":  {"x": 59.8, "y": 965.8}, 
+    "Alloggi-6":  {"x": 59.8, "y": 1004.8},
 
-    "Alloggi-5": {"x": 195, "y": 1025}, "Alloggi-4": {"x": 250, "y": 1025},
-    "Alloggi-3": {"x": 305, "y": 1025}, "Alloggi-2": {"x": 360, "y": 1025},
-    "Alloggi-1": {"x": 415, "y": 1025},
+    # ZONA ALLOGGI (RIGA VERDE IN BASSO): Coordinate corrette e allineate perfettamente
+    "Alloggi-5": {"x": 196.6, "y": 982.0}, 
+    "Alloggi-4": {"x": 251.6, "y": 982.0}, 
+    "Alloggi-3": {"x": 306.4, "y": 982.0}, 
+    "Alloggi-2": {"x": 361.9, "y": 982.0}, 
+    "Alloggi-1": {"x": 415.5, "y": 982.0},
     
     "Alta-1": {"x": 845, "y": 502}, "Alta-2": {"x": 845, "y": 537},
     "Alta-3": {"x": 845, "y": 572}, "Alta-4": {"x": 845, "y": 607},
@@ -124,7 +132,6 @@ scelte_x, scelte_y, colori, testi, chiavi_posto = [], [], [], [], []
 for codice_posto, coord in POSTI.items():
     chiavi_posto.append(codice_posto)
     
-    # La calibrazione viene ora calcolata automaticamente con i valori fissi
     x_calibrato = (coord["x"] * scale_x) + offset_x
     y_calibrato = (coord["y"] * scale_y) + offset_y
     

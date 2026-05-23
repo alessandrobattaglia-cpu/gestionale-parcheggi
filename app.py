@@ -25,36 +25,63 @@ RESTRIZIONI_GRUPPI = {
     "Viticoltura 2":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
 }
 
-# --- 2. CONFIGURAZIONE INTERFACCIA E LOGO STYLE ---
+# --- 2. CONFIGURAZIONE INTERFACCIA E INVERSIONE COLORI ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
 
-# Iniezione CSS per riprendere i colori del brand Accademia Symposium (Verde scuro #005A36)
+# Iniezione CSS personalizzato per invertire Verde e Bianco secondo il Brand
 st.markdown("""
     <style>
-        /* Colore dei titoli principali */
+        /* 1. AREA PRINCIPALE: Titoli in Verde Scuro */
         h1, h2, h3, .stSubheader {
             color: #005A36 !important;
             font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-weight: bold;
         }
-        /* Personalizzazione dei bottoni primari */
-        div.stButton > button:first-child {
+        
+        /* 2. SIDEBAR INVERTITA: Sfondo Verde Scuro, testi e label in Bianco */
+        section[data-testid="stSidebar"] {
             background-color: #005A36 !important;
-            color: white !important;
-            border-radius: 8px !important;
-            border: none !important;
-            font-weight: bold !important;
-            transition: background-color 0.3s ease;
+            border-right: 1px solid #004225;
         }
+        
+        /* Forza il colore bianco per ogni elemento testuale nella Sidebar */
+        section[data-testid="stSidebar"] .stMarkdown,
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] h1,
+        section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3,
+        section[data-testid="stSidebar"] h4,
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] div {
+            color: #ffffff !important;
+        }
+        
+        /* Input del calendario nella sidebar: testo scuro su fondo bianco per leggibilità */
+        section[data-testid="stSidebar"] input {
+            color: #005A36 !important;
+            background-color: #ffffff !important;
+        }
+        
+        /* 3. BOTTONI INVERTITI: Sfondo Bianco, Testo Verde Scuro e Bordo Verde */
+        div.stButton > button:first-child {
+            background-color: #ffffff !important;
+            color: #005A36 !important;
+            border: 2px solid #ffffff !important;
+            border-radius: 8px !important;
+            font-weight: bold !important;
+            box-shadow: 0px 3px 6px rgba(0,0,0,0.15);
+            transition: all 0.3s ease;
+        }
+        
+        /* Effetto al passaggio del mouse sui bottoni (diventano verde scuro a testo bianco) */
         div.stButton > button:first-child:hover {
             background-color: #004225 !important;
-            color: #e2f0cb !important;
+            color: #ffffff !important;
+            border-color: #004225 !important;
         }
-        /* Sfondo Sidebar coordinato */
-        section[data-testid="stSidebar"] {
-            background-color: #f4f7f5 !important;
-            border-right: 2px solid #005A36;
-        }
-        /* Colore dei testi evidenziati */
+        
+        /* Testi forti/evidenziati nell'applicazione */
         .stMarkdown strong {
             color: #005A36;
         }
@@ -89,7 +116,7 @@ username = utente_loggato["username"]
 gruppo_utente = utente_loggato.get("gruppo", "Marketing 1")
 is_admin = (username.lower() == "admin")
 
-# Sidebar di controllo
+# Sidebar di controllo (Ora sfondo verde, scritte bianche automatiche)
 st.sidebar.header("👤 Account")
 st.sidebar.write(f"Utente: **{username}**")
 st.sidebar.write(f"Gruppo: **{gruppo_utente}**")
@@ -112,7 +139,7 @@ else:
 data_scelta = st.sidebar.date_input("Vedi prenotazioni del:", min_value=oggi, max_value=max_data)
 data_str = data_scelta.strftime("%Y-%m-%d")
 
-if st.sidebar.button("Log out ❌"):
+if st.sidebar.button("Log out ❌", use_container_width=True):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
@@ -246,12 +273,11 @@ if not is_admin:
             st.rerun()
             
     else:
-        # SEZIONE INPUT DETTAGLI COMPAGNI DI VIAGGIO (RICHIESTA SPECIFICA)
         passeggeri_input = ""
         quanti_input = 1
         
         if gruppo_utente in gruppi_con_finestra:
-            st.subheader("📝 Dettagli del Viaggio Obligatori")
+            st.subheader("📝 Dettagli del Viaggio Obbligatori")
             col1, col2 = st.columns(2)
             with col1:
                 passeggeri_input = st.text_input("Chi c'è in auto? (Scrivi Nome e Cognome dei presenti separati da virgola):", placeholder="es. Mario Rossi, Luca Bianchi")
@@ -297,7 +323,7 @@ if not is_admin:
                     else:
                         st.error("❌ Purtroppo tutti i posti Alloggi sono esauriti per questa data.")
 
-        # CASO C: TUTTI GLI ALTRI GRUPPI CON RESTRIZIONI DI GIORNO E TETTO MASSIMO
+        # CASO C: TUTTI GLI ALTRI GRUPPI COINVOLTI
         else:
             if gruppo_utente in RESTRIZIONI_GRUPPI:
                 restrizione = RESTRIZIONI_GRUPPI[gruppo_utente]
@@ -372,7 +398,6 @@ else:
     st.divider()
     st.subheader("📋 Registro Generale Prenotazioni")
     
-    # OPZIONE NUOVA: VEDERE IL TOTALE COMPLETO O SOLO IL GIORNO CORRENTE
     vista_totale = st.checkbox("🔄 Mostra lo storico TOTALE di tutte le date (non solo oggi)", value=False)
     
     if vista_totale:
@@ -397,7 +422,6 @@ else:
         else:
             st.info("Nessuna prenotazione presente nell'intero database.")
     else:
-        # Vista Standard Giornaliera
         st.write(f"### 📅 Prenotazioni estratte per il giorno: {data_str}")
         if prenotazioni_giorno:
             for p_id, info in prenotazioni_giorno.items():

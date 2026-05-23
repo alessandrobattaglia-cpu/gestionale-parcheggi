@@ -25,65 +25,112 @@ RESTRIZIONI_GRUPPI = {
     "Viticoltura 2":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
 }
 
-# --- 2. CONFIGURAZIONE INTERFACCIA E INVERSIONE COLORI ---
+# --- 2. CONFIGURAZIONE INTERFACCIA ED ELEGANCE STYLE ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
 
-# Iniezione CSS personalizzato per invertire Verde e Bianco secondo il Brand
+# Iniezione CSS ultra-mirato per risolvere i contrasti e uniformare lo stile
 st.markdown("""
     <style>
-        /* 1. AREA PRINCIPALE: Titoli in Verde Scuro */
-        h1, h2, h3, .stSubheader {
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap');
+
+        /* 1. TIPOGRAFIA GENERALE AREA PRINCIPALE */
+        html, body, [data-testid="stAppViewContainer"], .stMarkdown {
+            font-family: 'Montserrat', sans-serif !important;
+            background-color: #ffffff;
+        }
+
+        /* Titoli dell'area principale (Sfondo Bianco -> Testo Verde) */
+        h1, h2, h3, h4, h5, h6, .stSubheader {
+            font-family: 'Montserrat', sans-serif !important;
             color: #005A36 !important;
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            font-weight: bold;
+            font-weight: 700 !important;
         }
         
-        /* 2. SIDEBAR INVERTITA: Sfondo Verde Scuro, testi e label in Bianco */
+        /* Testi in grassetto dell'area principale */
+        div[data-testid="stAppViewContainer"] .stMarkdown strong, 
+        div[data-testid="stAppViewContainer"] strong {
+            color: #005A36 !important;
+            font-weight: 600;
+        }
+
+        /* 2. BARRA LATERALE (SIDEBAR) - PROTEZIONE CONTRASTI */
         section[data-testid="stSidebar"] {
             background-color: #005A36 !important;
-            border-right: 1px solid #004225;
+            box-shadow: 4px 0px 20px rgba(0, 0, 0, 0.15);
         }
-        
-        /* Forza il colore bianco per ogni elemento testuale nella Sidebar */
-        section[data-testid="stSidebar"] .stMarkdown,
-        section[data-testid="stSidebar"] p,
+
+        /* Forzatura ASSOLUTA: qualsiasi testo, titolo o etichetta nella sidebar DEVE essere BIANCO */
         section[data-testid="stSidebar"] h1,
         section[data-testid="stSidebar"] h2,
         section[data-testid="stSidebar"] h3,
         section[data-testid="stSidebar"] h4,
+        section[data-testid="stSidebar"] p,
         section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] span,
-        section[data-testid="stSidebar"] div {
+        section[data-testid="stSidebar"] strong,
+        section[data-testid="stSidebar"] .stMarkdown p,
+        section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
             color: #ffffff !important;
         }
-        
-        /* Input del calendario nella sidebar: testo scuro su fondo bianco per leggibilità */
+
+        /* Correzione per i divisori di Streamlit nella barra laterale */
+        section[data-testid="stSidebar"] hr {
+            border-color: rgba(255, 255, 255, 0.2) !important;
+        }
+
+        /* Input del Calendario (Fondo bianco pulito, testo scuro interno per leggerlo mentre si scrive) */
         section[data-testid="stSidebar"] input {
             color: #005A36 !important;
             background-color: #ffffff !important;
+            border-radius: 8px !important;
+            font-weight: 500 !important;
         }
-        
-        /* 3. BOTTONI INVERTITI: Sfondo Bianco, Testo Verde Scuro e Bordo Verde */
-        div.stButton > button:first-child {
+
+        /* 3. BOTTONI NELL'AREA PRINCIPALE (Fondo Bianco -> Testo Verde) */
+        div[data-testid="stAppViewContainer"] div.stButton > button:first-child {
             background-color: #ffffff !important;
             color: #005A36 !important;
-            border: 2px solid #ffffff !important;
-            border-radius: 8px !important;
-            font-weight: bold !important;
-            box-shadow: 0px 3px 6px rgba(0,0,0,0.15);
-            transition: all 0.3s ease;
+            border: 1px solid #ced4da !important;
+            border-radius: 10px !important;
+            padding: 0.6rem 1.5rem !important;
+            font-weight: 600 !important;
+            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05) !important;
+            transition: all 0.25s ease-in-out !important;
+            width: 100%;
         }
-        
-        /* Effetto al passaggio del mouse sui bottoni (diventano verde scuro a testo bianco) */
-        div.stButton > button:first-child:hover {
-            background-color: #004225 !important;
+        div[data-testid="stAppViewContainer"] div.stButton > button:first-child:hover {
+            background-color: #005A36 !important;
             color: #ffffff !important;
-            border-color: #004225 !important;
+            border-color: #005A36 !important;
+            transform: translateY(-2px);
+        }
+
+        /* 4. BOTTONI DENTRO LA SIDEBAR (Sfondo scuro -> Testo Bianco con bordo) */
+        section[data-testid="stSidebar"] div.stButton > button:first-child {
+            background-color: transparent !important;
+            color: #ffffff !important;
+            border: 1px solid #ffffff !important;
+            box-shadow: none !important;
+            transition: all 0.25s ease-in-out !important;
+        }
+        section[data-testid="stSidebar"] div.stButton > button:first-child:hover {
+            background-color: #ffffff !important;
+            color: #005A36 !important;
+            border-color: #ffffff !important;
+            transform: translateY(-2px);
         }
         
-        /* Testi forti/evidenziati nell'applicazione */
-        .stMarkdown strong {
-            color: #005A36;
+        /* 5. STRUTTURA DELLE SCHEDE (CARDS) */
+        div[data-testid="stForm"], .stAlert {
+            border: 1px solid #e8ece9 !important;
+            padding: 2rem !important;
+            background-color: #fafdfb !important;
+            border-radius: 14px !important;
+            box-shadow: 0px 8px 24px rgba(0, 90, 54, 0.04) !important;
+        }
+        div[data-testid="stAppViewContainer"] input {
+            border-radius: 8px !important;
+            border: 1px solid #ced4da !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -116,7 +163,7 @@ username = utente_loggato["username"]
 gruppo_utente = utente_loggato.get("gruppo", "Marketing 1")
 is_admin = (username.lower() == "admin")
 
-# Sidebar di controllo (Ora sfondo verde, scritte bianche automatiche)
+# Sidebar di controllo (Sfondo verde, scritte ora forzatamente bianche)
 st.sidebar.header("👤 Account")
 st.sidebar.write(f"Utente: **{username}**")
 st.sidebar.write(f"Gruppo: **{gruppo_utente}**")
@@ -323,7 +370,7 @@ if not is_admin:
                     else:
                         st.error("❌ Purtroppo tutti i posti Alloggi sono esauriti per questa data.")
 
-        # CASO C: TUTTI GLI ALTRI GRUPPI COINVOLTI
+        # CASO C: TUTTI GLI ALTRI GRUPPI
         else:
             if gruppo_utente in RESTRIZIONI_GRUPPI:
                 restrizione = RESTRIZIONI_GRUPPI[gruppo_utente]

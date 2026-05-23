@@ -5,6 +5,8 @@ from supabase import create_client, Client
 import plotly.graph_objects as go
 from PIL import Image
 import os
+import pandas as pd  # Aggiunto per la gestione del file Excel
+import io
 
 # --- 1. CONNESSIONE AL DATABASE ---
 url: str = st.secrets["SUPABASE_URL"]
@@ -37,7 +39,7 @@ if "utente_autenticato" not in st.session_state:
 if st.session_state["utente_autenticato"] is None:
     st.subheader("🔑 Accesso Riservato")
     with st.form("form_login"):
-        username_inserito = st.text_input("Username o Email:")
+        username_inserito = st.text_input("Username:") # Modificato qui
         password_inserita = st.text_input("Password:", type="password")
         if st.form_submit_button("Accedi 🔓", use_container_width=True):
             if username_inserito and password_inserita:
@@ -71,7 +73,6 @@ gruppi_con_finestra = [
     "Food 1", "Food 2", "Zootecnia 1", "Zootecnia 2", "Viticoltura 1", "Viticoltura 2"
 ]
 
-# CORRETTO: gruppo_utente con due 'p'
 if gruppo_utente in gruppi_con_finestra and not is_admin:
     max_data = oggi + datetime.timedelta(days=14)
 else:
@@ -340,12 +341,56 @@ else:
     st.divider()
     st.subheader("📋 Registro Generale Prenotazioni")
     
-    vista_totale = st.checkbox("🔄 Mostra lo storico TOTALE di tutte le date (non solo oggi)", value=False)
+    # --- LOGICA ESTRAZIONE E DOWNLOAD EXCEL ---
+    risposta_t = supabase.table("prenotazioni").select("data, posto_id, passeggeri, numero_persone, utenti(username, targa, gruppo)").order("data", desc=False).execute()
+    
+    # Prepariamo un bottone per scaricare il file XLSX
+    if risposta_t.data:
+        lista_excel = []
+        for item in risposta_t.data:
+            u_info = item.get("utenti") or {}
+            p_data_raw = item.get("data")
+            
+            try:
+                dt = datetime.datetime.strptime(p_data_raw, "%Y-%m-%d")
+                p_data_visiva = dt.strftime("%d/%m/%Y")
+            except Exception:
+                p_data_visiva = p_data_raw
+                
+            p_user = u_info.get("username", "Occupato")
+            
+            lista_excel.append({
+                "Data": p_data_visiva,
+                "Posto": item.get("posto_id"),
+                "Stato / Utente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
+                "Gruppo": u_info.get("gruppo", "-") if p_user.lower() != 'admin' else "-",
+                "Targa": u_info.get("targa", "-") if p_user.lower() != 'admin' else "-",
+                "Numero Persone": item.get("numero_persone", 1) if p_user.lower() != 'admin' else "-",
+                "Passeggeri a Bordo": item.get("passeggeri", "Nessuno") if p_user.lower() != 'admin' else "-"
+            })
+        
+        # Creazione del dataframe e conversione in buffer binario Excel
+        df_excel = pd.DataFrame(lista_excel)
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_excel.to_excel(writer, index=False, sheet_name='Prenotazioni')
+        buffer.seek(0)
+        
+        st.download_button(
+            label="📥 Scarica tutte le prenotazioni in Excel (.xlsx)",
+            data=buffer,
+            file_name=f"report_prenotazioni_{date.today().strftime('%d_%m_%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+    else:
+        st.info("Nessun dato disponibile da esportare in Excel.")
+
+    st.write("") # Spaziatore
+    vista_totale = st.checkbox("🔄 Mostra lo storico TOTALE a schermo (non solo oggi)", value=False)
     
     if vista_totale:
         st.write("### 📊 Registro Complessivo di Tutte le Prenotazioni Attive")
-        risposta_t = supabase.table("prenotazioni").select("data, posto_id, passeggeri, numero_persone, utenti(username, targa, gruppo)").order("data", desc=False).execute()
-        
         if risposta_t.data:
             for item in risposta_t.data:
                 u_info = item.get("utenti") or {}

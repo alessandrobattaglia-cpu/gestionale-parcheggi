@@ -2,3 +2,5 @@ streamlit
 supabase
 plotly
 Pillow
+pandas
+openpyxl

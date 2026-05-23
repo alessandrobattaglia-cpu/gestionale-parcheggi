@@ -71,7 +71,8 @@ gruppi_con_finestra = [
     "Food 1", "Food 2", "Zootecnia 1", "Zootecnia 2", "Viticoltura 1", "Viticoltura 2"
 ]
 
-if grupo_utente in gruppi_con_finestra and not is_admin:
+# CORRETTO: gruppo_utente con due 'p'
+if gruppo_utente in gruppi_con_finestra and not is_admin:
     max_data = oggi + datetime.timedelta(days=14)
 else:
     max_data = oggi + datetime.timedelta(days=365)
@@ -343,7 +344,6 @@ else:
     
     if vista_totale:
         st.write("### 📊 Registro Complessivo di Tutte le Prenotazioni Attive")
-        # CORREZIONE QUI: desc=False sostituisce ascending=True per Supabase
         risposta_t = supabase.table("prenotazioni").select("data, posto_id, passeggeri, numero_persone, utenti(username, targa, gruppo)").order("data", desc=False).execute()
         
         if risposta_t.data:
@@ -351,7 +351,6 @@ else:
                 u_info = item.get("utenti") or {}
                 p_data_raw = item.get("data")
                 
-                # Conversione della data da database (YYYY-MM-DD) a visiva (DD/MM/YYYY)
                 try:
                     dt = datetime.datetime.strptime(p_data_raw, "%Y-%m-%d")
                     p_data_visiva = dt.strftime("%d/%m/%Y")

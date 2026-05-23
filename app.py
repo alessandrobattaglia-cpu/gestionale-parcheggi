@@ -12,7 +12,6 @@ key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # --- CONFIGURAZIONE RESTRIZIONI GRUPPI ---
-# 0=Lunedì, 1=Martedì, 2=Mercoledì, 3=Giovedì, 4=Venerdì, 5=Sabato, 6=Domenica
 RESTRIZIONI_GRUPPI = {
     "Marketing 1":   {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
     "Marketing 2":   {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
@@ -26,8 +25,42 @@ RESTRIZIONI_GRUPPI = {
     "Viticoltura 2":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
 }
 
-# --- 2. CONFIGURAZIONE INTERFACCIA ---
+# --- 2. CONFIGURAZIONE INTERFACCIA E LOGO STYLE ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
+
+# Iniezione CSS per riprendere i colori del brand Accademia Symposium (Verde scuro #005A36)
+st.markdown("""
+    <style>
+        /* Colore dei titoli principali */
+        h1, h2, h3, .stSubheader {
+            color: #005A36 !important;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+        }
+        /* Personalizzazione dei bottoni primari */
+        div.stButton > button:first-child {
+            background-color: #005A36 !important;
+            color: white !important;
+            border-radius: 8px !important;
+            border: none !important;
+            font-weight: bold !important;
+            transition: background-color 0.3s ease;
+        }
+        div.stButton > button:first-child:hover {
+            background-color: #004225 !important;
+            color: #e2f0cb !important;
+        }
+        /* Sfondo Sidebar coordinato */
+        section[data-testid="stSidebar"] {
+            background-color: #f4f7f5 !important;
+            border-right: 2px solid #005A36;
+        }
+        /* Colore dei testi evidenziati */
+        .stMarkdown strong {
+            color: #005A36;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("🚗 Parcheggi Symposium - Gestione Assegnazioni")
 
 if "utente_autenticato" not in st.session_state:
@@ -139,7 +172,7 @@ POSTI = {
 
 # --- 5. RECUPERO PRENOTAZIONI DEL GIORNO ---
 prenotazioni_giorno = {}
-risposta_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, utenti(username, targa, gruppo)").eq("data", data_str).execute()
+risposta_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, passeggeri, numero_persone, utenti(username, targa, gruppo)").eq("data", data_str).execute()
 
 if risposta_p.data:
     for p in risposta_p.data:
@@ -151,19 +184,21 @@ if risposta_p.data:
                 "utente_id": p.get("utente_id"),
                 "username": info_u.get("username", "Occupato"),
                 "targa": info_u.get("targa", "-"),
-                "gruppo": info_u.get("gruppo", "")
+                "gruppo": info_u.get("gruppo", ""),
+                "passeggeri": p.get("passeggeri") or "Nessuno",
+                "numero_persone": p.get("numero_persone") or 1
             }
 
 # --- 6. COSTRUZIONE E DISEGNO DELLA MAPPA ---
 img = Image.open("mappa.png")
-scelte_x, geopolitical_y, colori, testi, chiavi_posto = [], [], [], [], []
+scelte_x, scelte_y, colori, testi, chiavi_posto = [], [], [], [], []
 
 for codice_posto, coord in POSTI.items():
     chiavi_posto.append(codice_posto)
     x_calibrato = (coord["x"] * scale_x) + offset_x
     y_calibrato = (coord["y"] * scale_y) + offset_y
     scelte_x.append(x_calibrato)
-    geopolitical_y.append(y_calibrato)
+    scelte_y.append(y_calibrato)
     
     if codice_posto in prenotazioni_giorno:
         colori.append("red")
@@ -171,7 +206,7 @@ for codice_posto, coord in POSTI.items():
         if info_p["username"].lower() == "admin":
             testi.append(f"⛔ {codice_posto} (NON DISPONIBILE)")
         elif is_admin or gruppo_utente == "Personale":
-            testi.append(f"⛔ {codice_posto}<br>Occupato da: {info_p['username']} ({info_p['gruppo']})")
+            testi.append(f"⛔ {codice_posto}<br>Occupato da: {info_p['username']} ({info_p['gruppo']})<br>Persone a bordo: {info_p['numero_persone']}")
         else:
             testi.append(f"⛔ {codice_posto} (Occupato)")
     else:
@@ -181,7 +216,7 @@ for codice_posto, coord in POSTI.items():
 fig = go.Figure()
 fig.add_trace(go.Image(z=img))
 fig.add_trace(go.Scatter(
-    x=scelte_x, y=geopolitical_y,
+    x=scelte_x, y=scelte_y,
     mode="markers",
     marker=dict(size=14, color=colori, line=dict(width=1.5, color="white")),
     text=testi,
@@ -211,6 +246,18 @@ if not is_admin:
             st.rerun()
             
     else:
+        # SEZIONE INPUT DETTAGLI COMPAGNI DI VIAGGIO (RICHIESTA SPECIFICA)
+        passeggeri_input = ""
+        quanti_input = 1
+        
+        if gruppo_utente in gruppi_con_finestra:
+            st.subheader("📝 Dettagli del Viaggio Obligatori")
+            col1, col2 = st.columns(2)
+            with col1:
+                passeggeri_input = st.text_input("Chi c'è in auto? (Scrivi Nome e Cognome dei presenti separati da virgola):", placeholder="es. Mario Rossi, Luca Bianchi")
+            with col2:
+                quanti_input = st.number_input("In quanti siete in auto in totale? (Compreso te alla guida)", min_value=1, max_value=9, value=1)
+
         # CASO A: IL PERSONALE
         if gruppo_utente == "Personale":
             st.info("💡 **Modalità Personale:** Fai click direttamente su un pallino **VERDE** nella mappa per selezionare la tua area.")
@@ -233,21 +280,24 @@ if not is_admin:
         elif gruppo_utente == "Alloggi":
             st.info("ℹ️ I membri del gruppo Alloggi ricevono un posto automatico nella zona verde dedicata.")
             if st.button("Richiedi Assegnazione Posto Alloggi 🚗", use_container_width=True):
-                posti_alloggi = [k for k in POSTI.keys() if k.startswith("Alloggi-")]
-                posto_trovato = None
-                for p in posti_alloggi:
-                    if p not in prenotazioni_giorno:
-                        posto_trovato = p
-                        break
-                
-                if posto_trovato:
-                    supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_trovato}).execute()
-                    st.success(f"🎉 Sistema: Ti è stato assegnato il posto **{posto_trovato}**!")
-                    st.rerun()
+                if not passeggeri_input:
+                    st.error("⚠️ Compila il campo 'Chi c'è in auto?' prima di procedere.")
                 else:
-                    st.error("❌ Purtroppo tutti i posti Alloggi sono esauriti per questa data.")
+                    posti_alloggi = [k for k in POSTI.keys() if k.startswith("Alloggi-")]
+                    posto_trovato = None
+                    for p in posti_alloggi:
+                        if p not in prenotazioni_giorno:
+                            posto_trovato = p
+                            break
+                    
+                    if posto_trovato:
+                        supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_trovato, "passeggeri": passeggeri_input, "numero_persone": quanti_input}).execute()
+                        st.success(f"🎉 Sistema: Ti è stato assegnato il posto **{posto_trovato}**!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Purtroppo tutti i posti Alloggi sono esauriti per questa data.")
 
-        # CASO C: TUTTI GLI ALTRI GRUPPI
+        # CASO C: TUTTI GLI ALTRI GRUPPI CON RESTRIZIONI DI GIORNO E TETTO MASSIMO
         else:
             if gruppo_utente in RESTRIZIONI_GRUPPI:
                 restrizione = RESTRIZIONI_GRUPPI[gruppo_utente]
@@ -266,25 +316,28 @@ if not is_admin:
             
             st.info(f"ℹ️ Come membro del gruppo **{gruppo_utente}**, il sistema ti assegnerà automaticamente un posto libero tra la Zona Studenti, Bassa o Alta.")
             if st.button("Richiedi Assegnazione Posto Auto 🚗", use_container_width=True):
-                posti_comuni = [k for k in POSTI.keys() if not k.startswith("Alloggi-")]
-                posto_trovato = None
-                for p in posti_comuni:
-                    if p not in prenotazioni_giorno:
-                        posto_trovato = p
-                        break
-                
-                if posto_trovato:
-                    supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_trovato}).execute()
-                    st.success(f"🎉 Sistema: Ti è stato assegnato il posto **{posto_trovato}**!")
-                    st.rerun()
+                if not passeggeri_input:
+                    st.error("⚠️ Compila il campo 'Chi c'è in auto?' prima di procedere.")
                 else:
-                    st.error("❌ Posti auto esauriti per oggi nelle zone Studenti/Bassa/Alta.")
+                    posti_comuni = [k for k in POSTI.keys() if not k.startswith("Alloggi-")]
+                    posto_trovato = None
+                    for p in posti_comuni:
+                        if p not in prenotazioni_giorno:
+                            posto_trovato = p
+                            break
+                    
+                    if posto_trovato:
+                        supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_trovato, "passeggeri": passeggeri_input, "numero_persone": quanti_input}).execute()
+                        st.success(f"🎉 Sistema: Ti è stato assegnato il posto **{posto_trovato}**!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Posti auto esauriti per oggi nelle zone Studenti/Bassa/Alta.")
 
 # --- PANNELLO DI CONTROLLO AMMINISTRATORE ---
 else:
     st.divider()
     st.subheader("🛠️ Strumenti di Amministrazione Mappa")
-    st.info("💡 **Istruzioni Admin:** Fai click su un pallino **VERDE** sulla mappa per bloccarlo (renderlo Non Disponibile). Clicca su un pallino **ROSSO** per sbloccarlo o forzare la cancellazione.")
+    st.info("💡 **Istruzioni Admin:** Fai click su un pallino **VERDE** sulla mappa per bloccarlo. Clicca su un pallino **ROSSO** per sbloccarlo o forzare la cancellazione.")
     
     if click_data and "selection" in click_data and click_data["selection"]["points"]:
         punto_cliccato = click_data["selection"]["points"][0]
@@ -317,12 +370,40 @@ else:
                         st.rerun()
 
     st.divider()
-    st.subheader("📋 Registro Generale Prenotazioni del Giorno")
-    if prenotazioni_giorno:
-        for p_id, info in prenotazioni_giorno.items():
-            if info['username'].lower() == 'admin':
-                st.write(f"🚫 Posto **{p_id}** ➔ **NON DISPONIBILE** (Bloccato dall'Amministratore)")
-            else:
-                st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Gruppo: *{info['gruppo']}* | Targa: {info['targa']})")
+    st.subheader("📋 Registro Generale Prenotazioni")
+    
+    # OPZIONE NUOVA: VEDERE IL TOTALE COMPLETO O SOLO IL GIORNO CORRENTE
+    vista_totale = st.checkbox("🔄 Mostra lo storico TOTALE di tutte le date (non solo oggi)", value=False)
+    
+    if vista_totale:
+        st.write("### 📊 Registro Complessivo di Tutte le Prenotazioni Attive")
+        risposta_t = supabase.table("prenotazioni").select("data, posto_id, passeggeri, numero_persone, utenti(username, targa, gruppo)").order("data", ascending=True).execute()
+        
+        if risposta_t.data:
+            for item in risposta_t.data:
+                u_info = item.get("utenti") or {}
+                p_data = item.get("data")
+                p_posto = item.get("posto_id")
+                p_user = u_info.get("username", "Occupato")
+                p_group = u_info.get("gruppo", "-")
+                p_targa = u_info.get("targa", "-")
+                p_pass = item.get("passeggeri") or "Nessuno"
+                p_num = item.get("numero_persone") or 1
+                
+                if p_user.lower() == 'admin':
+                    st.write(f"📅 **{p_data}** ➔ 🚫 Posto **{p_posto}** BLOCCATO dall'Amministratore")
+                else:
+                    st.write(f"📅 **{p_data}** ➔ 🚗 Posto **{p_posto}** di **{p_user}** ({p_group} | Targa: {p_targa}) ➔ *A bordo ({p_num} persone): {p_pass}*")
+        else:
+            st.info("Nessuna prenotazione presente nell'intero database.")
     else:
-        st.info("Nessuna prenotazione o blocco registrato per questa data.")
+        # Vista Standard Giornaliera
+        st.write(f"### 📅 Prenotazioni estratte per il giorno: {data_str}")
+        if prenotazioni_giorno:
+            for p_id, info in prenotazioni_giorno.items():
+                if info['username'].lower() == 'admin':
+                    st.write(f"🚫 Posto **{p_id}** ➔ **NON DISPONIBILE** (Bloccato dall'Amministratore)")
+                else:
+                    st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Gruppo: *{info['gruppo']}* | Targa: {info['targa']}) ➔ *A bordo ({info['numero_persone']} persone): {info['passeggeri']}*")
+        else:
+            st.info("Nessuna prenotazione o blocco registrato per la data selezionata.")

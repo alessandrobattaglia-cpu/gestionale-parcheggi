@@ -368,4 +368,6 @@ else:
                 if info['username'].lower() == 'admin':
                     st.write(f"🚫 Posto **{p_id}** ➔ **NON DISPONIBILE** (Bloccato dall'Amministratore)")
                 else:
-                    st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Gruppo: *{info['gruppo']}* | Targa: {info['targa']}) ➔ *A bordo ({info
+                    st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Gruppo: *{info['gruppo']}* | Targa: {info['targa']}) ➔ *A bordo ({info['numero_persone']} persone): {info['passeggeri']}*")
+        else:
+            st.info("Nessuna prenotazione o blocco registrato per la data selezionata.")

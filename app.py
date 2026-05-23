@@ -76,8 +76,9 @@ if gruppo_utente in gruppi_con_finestra and not is_admin:
 else:
     max_data = oggi + datetime.timedelta(days=365)
 
-data_scelta = st.sidebar.date_input("Vedi prenotazioni del:", min_value=oggi, max_value=max_data)
-data_str = data_scelta.strftime("%Y-%m-%d")
+data_scelta = st.sidebar.date_input("Vedi prenotazioni del:", min_value=oggi, max_value=max_data, format="DD/MM/YYYY")
+data_str = data_scelta.strftime("%Y-%m-%d")         # Formato per il database Supabase
+data_visiva = data_scelta.strftime("%d/%m/%Y")      # Formato per la visualizzazione utente (Giorno/Mese/Anno)
 
 if st.sidebar.button("Log out ❌", use_container_width=True):
     st.session_state["utente_autenticato"] = None
@@ -194,7 +195,7 @@ fig.update_xaxes(range=[0, img.width], showgrid=False, zeroline=False, visible=F
 fig.update_yaxes(range=[img.height, 0], showgrid=False, zeroline=False, visible=False, scaleanchor="x", scaleratio=1)
 fig.update_layout(height=850, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select")
 
-st.subheader(f"Mappa Parcheggi per il giorno: {data_str}")
+st.subheader(f"Mappa Parcheggi per il giorno: {data_visiva}")
 config = {'displayModeBar': False}
 
 mappa_interattiva = (gruppo_utente == "Personale" or is_admin)
@@ -206,7 +207,7 @@ if not is_admin:
     
     if ha_gia_prenotato.data:
         posto_occupato_ora = ha_gia_prenotato.data[0]["posto_id"]
-        st.warning(f"🏷️ Hai già riservato il posto: **{posto_occupato_ora}** per oggi.")
+        st.warning(f"🏷️ Hai già riservato il posto: **{posto_occupato_ora}** per il giorno {data_visiva}.")
         if st.button("Cancella la mia prenotazione ❌", use_container_width=True):
             supabase.table("prenotazioni").delete().eq("id", ha_gia_prenotato.data[0]["id"]).execute()
             st.success("Prenotazione annullata con successo!")
@@ -280,7 +281,7 @@ if not is_admin:
                     st.error(f"❌ Limite raggiunto! Il tuo gruppo (**{gruppo_utente}**) ha già esaurito la quota massima di **{restrizione['max_posti']}** parcheggi per oggi.")
                     st.stop()
             
-            st.info(f"ℹ️ Come membro del gruppo **{gruppo_utente}**, il sistema ti assegnà automaticamente un posto libero tra la Zona Studenti, Bassa o Alta.")
+            st.info(f"ℹ️ Come membro del gruppo **{gruppo_utente}**, il sistema ti assegnerà automaticamente un posto libero tra la Zona Studenti, Bassa o Alta.")
             if st.button("Richiedi Assegnazione Posto Auto 🚗", use_container_width=True):
                 if not passeggeri_input:
                     st.error("⚠️ Compila il campo 'Chi c'è in auto?' prima di procedere.")
@@ -347,7 +348,15 @@ else:
         if risposta_t.data:
             for item in risposta_t.data:
                 u_info = item.get("utenti") or {}
-                p_data = item.get("data")
+                p_data_raw = item.get("data")
+                
+                # Conversione della data da database (YYYY-MM-DD) a visiva (DD/MM/YYYY)
+                try:
+                    dt = datetime.datetime.strptime(p_data_raw, "%Y-%m-%d")
+                    p_data_visiva = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    p_data_visiva = p_data_raw
+                
                 p_posto = item.get("posto_id")
                 p_user = u_info.get("username", "Occupato")
                 p_group = u_info.get("gruppo", "-")
@@ -356,13 +365,13 @@ else:
                 p_num = item.get("numero_persone") or 1
                 
                 if p_user.lower() == 'admin':
-                    st.write(f"📅 **{p_data}** ➔ 🚫 Posto **{p_posto}** BLOCCATO dall'Amministratore")
+                    st.write(f"📅 **{p_data_visiva}** ➔ 🚫 Posto **{p_posto}** BLOCCATO dall'Amministratore")
                 else:
-                    st.write(f"📅 **{p_data}** ➔ 🚗 Posto **{p_posto}** di **{p_user}** ({p_group} | Targa: {p_targa}) ➔ *A bordo ({p_num} persone): {p_pass}*")
+                    st.write(f"📅 **{p_data_visiva}** ➔ 🚗 Posto **{p_posto}** di **{p_user}** ({p_group} | Targa: {p_targa}) ➔ *A bordo ({p_num} persone): {p_pass}*")
         else:
             st.info("Nessuna prenotazione presente nell'intero database.")
     else:
-        st.write(f"### 📅 Prenotazioni estratte per il giorno: {data_str}")
+        st.write(f"### 📅 Prenotazioni estratte per il giorno: {data_visiva}")
         if prenotazioni_giorno:
             for p_id, info in prenotazioni_giorno.items():
                 if info['username'].lower() == 'admin':
@@ -370,4 +379,4 @@ else:
                 else:
                     st.write(f"🚗 Posto **{p_id}** ➔ Occupato da **{info['username']}** (Gruppo: *{info['gruppo']}* | Targa: {info['targa']}) ➔ *A bordo ({info['numero_persone']} persone): {info['passeggeri']}*")
         else:
-            st.info("Nessuna prenotazione o blocco registrato per la data selezionata.")
+            st.info(f"Nessuna prenotazione o blocco registrato per la data del {data_visiva}.")

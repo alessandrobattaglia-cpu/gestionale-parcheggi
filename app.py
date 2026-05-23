@@ -71,7 +71,7 @@ gruppi_con_finestra = [
     "Food 1", "Food 2", "Zootecnia 1", "Zootecnia 2", "Viticoltura 1", "Viticoltura 2"
 ]
 
-if gruppo_utente in gruppi_con_finestra and not is_admin:
+if grupo_utente in gruppi_con_finestra and not is_admin:
     max_data = oggi + datetime.timedelta(days=14)
 else:
     max_data = oggi + datetime.timedelta(days=365)
@@ -343,7 +343,8 @@ else:
     
     if vista_totale:
         st.write("### 📊 Registro Complessivo di Tutte le Prenotazioni Attive")
-        risposta_t = supabase.table("prenotazioni").select("data, posto_id, passeggeri, numero_persone, utenti(username, targa, gruppo)").order("data", ascending=True).execute()
+        # CORREZIONE QUI: desc=False sostituisce ascending=True per Supabase
+        risposta_t = supabase.table("prenotazioni").select("data, posto_id, passeggeri, numero_persone, utenti(username, targa, gruppo)").order("data", desc=False).execute()
         
         if risposta_t.data:
             for item in risposta_t.data:

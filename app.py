@@ -5,7 +5,7 @@ from supabase import create_client, Client
 import plotly.graph_objects as go
 from PIL import Image
 import os
-import pandas as pd  # Aggiunto per la gestione del file Excel
+import pandas as pd  
 import io
 
 # --- 1. CONNESSIONE AL DATABASE ---
@@ -27,7 +27,7 @@ RESTRIZIONI_GRUPPI = {
     "Viticoltura 2":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
 }
 
-# --- 2. CONFIGURAZIONE INTERFACCIA ORIGINALE ---
+# --- 2. CONFIGURAZIONE INTERFACCIA ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
 
 st.title("🚗 Parcheggi Symposium - Gestione Assegnazioni")
@@ -39,7 +39,7 @@ if "utente_autenticato" not in st.session_state:
 if st.session_state["utente_autenticato"] is None:
     st.subheader("🔑 Accesso Riservato")
     with st.form("form_login"):
-        username_inserito = st.text_input("Username:") # Modificato qui
+        username_inserito = st.text_input("Username:")
         password_inserita = st.text_input("Password:", type="password")
         if st.form_submit_button("Accedi 🔓", use_container_width=True):
             if username_inserito and password_inserita:
@@ -86,9 +86,12 @@ if st.sidebar.button("Log out ❌", use_container_width=True):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# --- AUTO-ANNULLAMENTO IL GIORNO DOPO ---
+# --- AUTO-ANNULLAMENTO DOPO 3 GIORNI ---
 try:
-    supabase.table("prenotazioni").delete().lt("data", oggi.strftime("%Y-%m-%d")).execute()
+    # Calcola la data limite (3 giorni fa rispetto a oggi)
+    data_limite = oggi - datetime.timedelta(days=3)
+    # Cancella solo le prenotazioni antecedenti a 'data_limite'
+    supabase.table("prenotazioni").delete().lt("data", data_limite.strftime("%Y-%m-%d")).execute()
 except Exception:
     pass
 
@@ -344,7 +347,6 @@ else:
     # --- LOGICA ESTRAZIONE E DOWNLOAD EXCEL ---
     risposta_t = supabase.table("prenotazioni").select("data, posto_id, passeggeri, numero_persone, utenti(username, targa, gruppo)").order("data", desc=False).execute()
     
-    # Prepariamo un bottone per scaricare il file XLSX
     if risposta_t.data:
         lista_excel = []
         for item in risposta_t.data:
@@ -369,7 +371,6 @@ else:
                 "Passeggeri a Bordo": item.get("passeggeri", "Nessuno") if p_user.lower() != 'admin' else "-"
             })
         
-        # Creazione del dataframe e conversione in buffer binario Excel
         df_excel = pd.DataFrame(lista_excel)
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -386,7 +387,7 @@ else:
     else:
         st.info("Nessun dato disponibile da esportare in Excel.")
 
-    st.write("") # Spaziatore
+    st.write("") 
     vista_totale = st.checkbox("🔄 Mostra lo storico TOTALE a schermo (non solo oggi)", value=False)
     
     if vista_totale:

@@ -5,6 +5,7 @@ from supabase import create_client, Client
 import pandas as pd
 import io
 import json
+import base64
 import streamlit.components.v1 as components
 
 # --- 1. CONNESSIONE AL DATABASE ---
@@ -14,8 +15,8 @@ supabase: Client = create_client(url, key)
 
 # --- CONFIGURAZIONE RESTRIZIONI GRUPPI ---
 RESTRIZIONI_GRUPPI = {
-    "Marketing 1":   {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
-    "Marketing 2":   {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
+    "Marketing 1":    {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
+    "Marketing 2":    {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
     "Agro 1":         {"giorni_consentiti": [2, 3, 4], "max_posti": 4},
     "Agro 2":         {"giorni_consentiti": [2, 3, 4], "max_posti": 4},
     "Food 1":         {"giorni_consentiti": [0, 1, 4], "max_posti": 3},
@@ -136,16 +137,31 @@ if risposta_p.data:
 # --- 6. INIEZIONE DATI E DISEGNO MAPPA VETTORIALE HTML ---
 st.subheader(f"🗺️ Mappa Parcheggi Interattiva - Giorno: {data_visiva}")
 
-# Convertiamo il dizionario delle prenotazioni in formato JSON
+# 1. Convertiamo il dizionario delle prenotazioni in formato JSON
 stato_posti_json = json.dumps(prenotazioni_giorno)
 
-# Carichiamo il file HTML e sostituiamo il segnaposto con i dati veri
+# 2. Funzione per convertire l'immagine di sfondo in Base64
+def get_base64_image(image_path):
+    try:
+        with open(image_path, "rb") as img_file:
+            encoded = base64.b64encode(img_file.read()).decode()
+            return f"data:image/png;base64,{encoded}"
+    except FileNotFoundError:
+        st.warning(f"Immagine '{image_path}' non trovata. Verrà mostrato uno sfondo grigio/trasparente.")
+        return ""
+
+# Convertiamo la tua immagine "Screenshot 2026-09-30 alle 14.20.10.png"
+bg_image_base64 = get_base64_image("Screenshot 2026-09-30 alle 14.20.10.png")
+
+# 3. Carichiamo il file HTML e sostituiamo i segnaposti
 try:
     with open("mappa.html", "r", encoding="utf-8") as f:
         html_raw = f.read()
     
     # Iniettiamo il JSON nel codice JavaScript della mappa
     html_ready = html_raw.replace("ST_PRENOTAZIONI_JSON_PLACEHOLDER", stato_posti_json)
+    # Iniettiamo l'immagine di sfondo convertita
+    html_ready = html_ready.replace("ST_BACKGROUND_IMAGE_PLACEHOLDER", bg_image_base64)
     
     # Renderizziamo la mappa all'interno dell'app Streamlit
     components.html(html_ready, height=800, scrolling=True)
@@ -155,6 +171,8 @@ except Exception as e:
     st.error(f"⚠️ Impossibile caricare la mappa. Dettagli errore: {e}")
 
 # --- 7. LOGICA ASSEGNAZIONE E PRENOTAZIONE ---
+st.divider()
+
 if not is_admin:
     ha_gia_prenotato = supabase.table("prenotazioni").select("id, posto_id").eq("utente_id", utente_loggato["id"]).eq("data", data_str).execute()
     

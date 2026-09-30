@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 10px; background: #f4f6f9; }
+    .container { display: flex; gap: 15px; }
+    .sidebar { width: 220px; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); max-height: 750px; overflow-y: auto; }
+    .map-container { flex: 1; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .user-item { padding: 4px 8px; font-size: 12px; border-bottom: 1px solid #eee; cursor: pointer; }
+    .user-item:hover { background: #eef2f7; }
+    rect.spot { cursor: pointer; stroke: #333; stroke-width: 1; transition: all 0.2s; }
+    rect.spot:hover { stroke-width: 3; stroke: #000; }
+    rect.free { fill: #2ecc71; }
+    rect.occ { fill: #e74c3c; }
+    rect.yellow { fill: #f1c40f; }
+    rect.orange { fill: #e67e22; }
+    rect.green { fill: #27ae60; }
+    text.spot-label { font-size: 9px; font-weight: bold; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="sidebar">
+      <h4>📋 ELENCO INTERNI</h4>
+      <div id="userList"></div>
+    </div>
+    <div class="map-container">
+      <svg viewBox="0 0 1000 650" width="100%" height="700">
+        <!-- Griglia di sfondo -->
+        <defs>
+          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="1000" height="650" fill="url(#grid)" />
+
+        <!-- Strutture (Chiesa, Livio, Grotta) -->
+        <rect x="420" y="120" width="90" height="35" fill="#3498db" stroke="#333" />
+        <text x="465" y="140" fill="white" font-size="11" font-weight="bold" text-anchor="middle">CHIESA</text>
+
+        <ellipse cx="260" cy="180" rx="25" ry="12" fill="white" stroke="#333" />
+        <text x="260" y="183" font-size="10" text-anchor="middle">LIVIO</text>
+
+        <rect x="550" y="380" width="30" height="15" fill="#e0e0e0" stroke="#333" transform="rotate(-30 550 380)" />
+        <text x="560" y="380" font-size="8" text-anchor="middle">GROTTA</text>
+
+        <!-- STALLI INGRESSO INCLINATI (Gialli) -->
+        <g id="stalliIngresso">
+          <rect class="spot yellow" x="90" y="220" width="25" height="18" transform="rotate(-20 90 220)" data-id="Bassa-1" />
+          <rect class="spot yellow" x="120" y="209" width="25" height="18" transform="rotate(-20 120 209)" data-id="Bassa-2" />
+          <rect class="spot yellow" x="150" y="198" width="25" height="18" transform="rotate(-20 150 198)" data-id="Bassa-3" />
+          <rect class="spot yellow" x="180" y="187" width="25" height="18" transform="rotate(-20 180 187)" data-id="Bassa-4" />
+          <rect class="spot yellow" x="210" y="176" width="25" height="18" transform="rotate(-20 210 176)" data-id="Bassa-5" />
+          
+          <rect class="spot yellow" x="350" y="130" width="25" height="18" transform="rotate(-15 350 130)" data-id="Bassa-6" />
+          <rect class="spot yellow" x="380" y="122" width="25" height="18" transform="rotate(-15 380 122)" data-id="Bassa-7" />
+          <rect class="spot yellow" x="410" y="114" width="25" height="18" transform="rotate(-15 410 114)" data-id="Bassa-8" />
+          <rect class="spot yellow" x="440" y="106" width="25" height="18" transform="rotate(-15 440 106)" data-id="Bassa-9" />
+          <rect class="spot yellow" x="470" y="98" width="25" height="18" transform="rotate(-15 470 98)" data-id="Bassa-10" />
+        </g>
+
+        <!-- STALLI CENTRALI (Gialli) -->
+        <g id="stalliCentrali">
+          <!-- Colonna Sinistra -->
+          <rect class="spot yellow" x="360" y="180" width="50" height="18" data-id="Studenti-1" />
+          <rect class="spot yellow" x="360" y="200" width="50" height="18" data-id="Studenti-2" />
+          <rect class="spot yellow" x="360" y="220" width="50" height="18" data-id="Studenti-3" />
+          <rect class="spot yellow" x="360" y="240" width="50" height="18" data-id="Studenti-4" />
+          <rect class="spot yellow" x="360" y="280" width="50" height="18" data-id="Studenti-5" />
+          <rect class="spot yellow" x="360" y="300" width="50" height="18" data-id="Studenti-6" />
+          <rect class="spot yellow" x="360" y="320" width="50" height="18" data-id="Studenti-7" />
+          <rect class="spot yellow" x="360" y="340" width="50" height="18" data-id="Studenti-8" />
+
+          <!-- Colonna Destra -->
+          <rect class="spot yellow" x="555" y="280" width="50" height="18" data-id="Studenti-9" />
+          <rect class="spot yellow" x="555" y="300" width="50" height="18" data-id="Studenti-10" />
+          <rect class="spot yellow" x="555" y="320" width="50" height="18" data-id="Studenti-11" />
+          <rect class="spot yellow" x="555" y="340" width="50" height="18" data-id="Studenti-12" />
+
+          <!-- Fila Inferiore -->
+          <rect class="spot yellow" x="450" y="420" width="22" height="35" data-id="Piazzale-1" />
+          <rect class="spot yellow" x="475" y="420" width="22" height="35" data-id="Piazzale-2" />
+          <rect class="spot yellow" x="500" y="420" width="22" height="35" data-id="Piazzale-3" />
+          <rect class="spot yellow" x="525" y="420" width="22" height="35" data-id="Piazzale-4" />
+        </g>
+
+        <!-- ZONA ALTA (Arancione/Rosa) -->
+        <g id="stalliZonaAlta">
+          <text x="850" y="270" font-size="12" font-weight="bold" fill="#d35400" text-anchor="middle">ZONA ALTA</text>
+          <!-- Fila Sinistra -->
+          <rect class="spot orange" x="770" y="220" width="45" height="18" data-id="Alta-1" />
+          <rect class="spot orange" x="770" y="240" width="45" height="18" data-id="Alta-2" />
+          <rect class="spot orange" x="770" y="260" width="45" height="18" data-id="Alta-3" />
+          <rect class="spot orange" x="770" y="280" width="45" height="18" data-id="Alta-4" />
+          <rect class="spot orange" x="770" y="300" width="45" height="18" data-id="Alta-5" />
+          <rect class="spot orange" x="770" y="320" width="45" height="18" data-id="Alta-6" />
+          <rect class="spot orange" x="770" y="340" width="45" height="18" data-id="Alta-7" />
+
+          <!-- Fila Destra -->
+          <rect class="spot orange" x="890" y="200" width="45" height="18" data-id="Alta-8" />
+          <rect class="spot orange" x="890" y="220" width="45" height="18" data-id="Alta-9" />
+          <rect class="spot orange" x="890" y="240" width="45" height="18" data-id="Alta-10" />
+          <rect class="spot orange" x="890" y="260" width="45" height="18" data-id="Alta-11" />
+          <rect class="spot orange" x="890" y="280" width="45" height="18" data-id="Alta-12" />
+          <rect class="spot orange" x="890" y="300" width="45" height="18" data-id="Alta-13" />
+          <rect class="spot orange" x="890" y="320" width="45" height="18" data-id="Alta-14" />
+          <rect class="spot orange" x="890" y="340" width="45" height="18" data-id="Alta-15" />
+        </g>
+
+        <!-- ZONA AGRICOLA / ALLOGGI (Verdi) -->
+        <g id="stalliAgricola">
+          <text x="470" y="515" font-size="10" font-weight="bold" fill="#27ae60">AZIENDA AGRICOLA</text>
+          <rect class="spot green" x="400" y="530" width="30" height="25" data-id="Alloggi-1" />
+          <rect class="spot green" x="435" y="530" width="30" height="25" data-id="Alloggi-2" />
+          <rect class="spot green" x="470" y="530" width="30" height="25" data-id="Alloggi-3" />
+          <rect class="spot green" x="505" y="530" width="30" height="25" data-id="Alloggi-4" />
+          <rect class="spot green" x="540" y="530" width="30" height="25" data-id="Alloggi-5" />
+          <rect class="spot green" x="575" y="530" width="30" height="25" data-id="Alloggi-6" />
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script>
+    const utenti = [
+      "1. Laura P.", "2. Deborah", "3. Greta (BAR)", "4. Francesca (BAR)", "5. Galbiati",
+      "6. Mariolina", "7. Giada", "8. Sonia", "9. Frank", "10. Massimo", "11. Giacomo",
+      "12. Chiara", "13. Dina", "14. Manuel", "15. Laura", "16. Giuliano", "17. Fede Micheli",
+      "18. Fede Moretti", "19. Sofia", "20. Isaac", "21. Mancio", "22. Fabio (az. agricola)",
+      "23. Matteo (az. agricola)", "24. Betto (az. agricola)", "25. New entry", "26. New entry"
+    ];
+
+    const listContainer = document.getElementById("userList");
+    utenti.forEach(u => {
+      const div = document.createElement("div");
+      div.className = "user-item";
+      div.innerText = u;
+      listContainer.appendChild(div);
+    });
+  </script>
+</body>
+</html>

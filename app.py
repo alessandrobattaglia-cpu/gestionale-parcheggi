@@ -7,6 +7,7 @@ from PIL import Image
 import os
 import pandas as pd  
 import io
+import streamlit.components.v1 as components
 
 # --- 1. CONNESSIONE AL DATABASE ---
 url: str = st.secrets["SUPABASE_URL"]
@@ -163,48 +164,18 @@ if risposta_p.data:
             }
 
 # --- 6. COSTRUZIONE E DISEGNO DELLA MAPPA ---
-img = Image.open("mappa.png")
-scelte_x, choices_y, colori, testi, chiavi_posto = [], [], [], [], []
+st.subheader(f"🗺️ Mappa Parcheggi Interattiva - Giorno: {data_visiva}")
 
-for codice_posto, coord in POSTI.items():
-    chiavi_posto.append(codice_posto)
-    x_calibrato = (coord["x"] * scale_x) + offset_x
-    y_calibrato = (coord["y"] * scale_y) + offset_y
-    scelte_x.append(x_calibrato)
-    choices_y.append(y_calibrato)
-    
-    if codice_posto in prenotazioni_giorno:
-        colori.append("red")
-        info_p = prenotazioni_giorno[codice_posto]
-        if info_p["username"].lower() == "admin":
-            testi.append(f"⛔ {codice_posto} (NON DISPONIBILE)")
-        elif is_admin or gruppo_utente == "Personale":
-            testi.append(f"⛔ {codice_posto}<br>Occupato da: {info_p['username']} ({info_p['gruppo']})<br>Persone a bordo: {info_p['numero_persone']}")
-        else:
-            testi.append(f"⛔ {codice_posto} (Occupato)")
-    else:
-        colori.append("green")
-        testi.append(f"🟢 {codice_posto} (Libero)")
+def load_map_html(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()
 
-fig = go.Figure()
-fig.add_trace(go.Image(z=img))
-fig.add_trace(go.Scatter(
-    x=scelte_x, y=choices_y,
-    mode="markers",
-    marker=dict(size=14, color=colori, line=dict(width=1.5, color="white")),
-    text=testi,
-    hoverinfo="text",
-    customdata=chiavi_posto
-))
-fig.update_xaxes(range=[0, img.width], showgrid=False, zeroline=False, visible=False, constrain="domain")
-fig.update_yaxes(range=[img.height, 0], showgrid=False, zeroline=False, visible=False, scaleanchor="x", scaleratio=1)
-fig.update_layout(height=850, margin=dict(l=0, r=0, t=0, b=0), clickmode="event+select")
-
-st.subheader(f"Mappa Parcheggi per il giorno: {data_visiva}")
-config = {'displayModeBar': False}
-
-mappa_interattiva = (gruppo_utente == "Personale" or is_admin)
-click_data = st.plotly_chart(fig, use_container_width=True, on_select="rerun" if mappa_interattiva else "ignore", config=config)
+try:
+    map_html = load_map_html("mappa.html")
+    # Renderizza la mappa con altezza ottimale
+    components.html(map_html, height=720, scrolling=True)
+except Exception as e:
+    st.error(f"Errore nel caricamento del file mappa.html: {e}")
 
 # --- 7. LOGICA ASSEGNAZIONE E PRENOTAZIONE ---
 if not is_admin:

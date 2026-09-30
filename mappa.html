@@ -7,23 +7,47 @@
     .map-container { background: white; padding: 10px; border-radius: 12px; border: 1px solid #e0e0e0; }
     
     /* Stili base per i posti auto */
-    rect.spot { cursor: pointer; stroke: #2c3e50; stroke-width: 1.5; transition: all 0.3s; rx: 3px; ry: 3px; opacity: 0.85; }
-    rect.spot:hover { stroke-width: 3; filter: brightness(1.2); opacity: 1; }
+    rect.spot { 
+      cursor: pointer; 
+      stroke: #1a252f; 
+      stroke-width: 1.5; 
+      transition: all 0.2s ease; 
+      rx: 3px; 
+      ry: 3px; 
+      opacity: 0.9; 
+    }
+    rect.spot:hover { 
+      stroke-width: 3; 
+      stroke: #000; 
+      filter: brightness(1.2); 
+      opacity: 1; 
+    }
     
-    /* Colori delle zone (Liberi) */
-    .zone-bassa { fill: #f1c40f; }      /* Giallo */
-    .zone-alta { fill: #e67e22; }       /* Arancione */
-    .zone-alloggi { fill: #2ecc71; }    /* Verde */
+    /* Colori default per le diverse Zone (quando il posto è LIBERO) */
+    .zone-bassa    { fill: #f1c40f; } /* Giallo */
+    .zone-alta     { fill: #e67e22; } /* Arancione */
+    .zone-alloggi  { fill: #2ecc71; } /* Verde */
+    .zone-studenti { fill: #3498db; } /* Azzurro */
+    .zone-piazzale { fill: #9b59b6; } /* Viola */
     
-    /* Colori degli stati (Occupati) */
-    .occupied { fill: #e74c3c !important; opacity: 0.9; }    /* Rosso - Occupato */
-    .blocked { fill: #7f8c8d !important; opacity: 0.9; }     /* Grigio - Bloccato Admin */
+    /* Colori degli stati (quando il posto è OCCUPATO o BLOCCATO) */
+    .occupied { fill: #e74c3c !important; opacity: 0.95; }  /* Rosso - Occupato da utente */
+    .blocked  { fill: #7f8c8d !important; opacity: 0.95; }  /* Grigio - Bloccato da Admin */
 
-    /* Stile del Tooltip (Fumetto info) */
+    /* Stile del Tooltip (Fumetto info al passaggio del mouse) */
     #tooltip {
-      position: absolute; display: none; background: rgba(0, 0, 0, 0.85); color: #fff;
-      padding: 10px 15px; border-radius: 6px; font-size: 13px; pointer-events: none; z-index: 1000;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: pre-wrap;
+      position: absolute; 
+      display: none; 
+      background: rgba(0, 0, 0, 0.88); 
+      color: #fff;
+      padding: 10px 14px; 
+      border-radius: 8px; 
+      font-size: 13px; 
+      pointer-events: none; 
+      z-index: 1000;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
+      white-space: pre-wrap;
+      line-height: 1.4;
     }
   </style>
 </head>
@@ -32,31 +56,99 @@
   <div id="tooltip"></div>
 
   <div class="map-container">
-    <!-- viewBox: gestisce le proporzioni. Modifica 1100 e 950 a seconda delle dimensioni reali del tuo screenshot se necessario -->
     <svg viewBox="0 0 1100 950" width="100%" height="750">
       
-      <!-- 1. LA TUA IMMAGINE DI SFONDO -->
+      <!-- 1. IMMAGINE DI SFONDO -->
       <image href="ST_BACKGROUND_IMAGE_PLACEHOLDER" x="0" y="0" width="1100" height="950" preserveAspectRatio="none" />
 
-      <!-- 2. STALLI ZONA BASSA (Da riposizionare) -->
+      <!-- 2. ZONA BASSA (15 Posti: Bassa-1 ... Bassa-15) -->
       <g id="zona-bassa">
-        <!-- Esempio: cambia le coordinate x e y per farli combaciare con le strade della tua immagine -->
-        <rect class="spot zone-bassa" x="400" y="500" width="40" height="20" data-id="Bassa-1" />
-        <rect class="spot zone-bassa" x="450" y="500" width="40" height="20" data-id="Bassa-2" />
-        <!-- Aggiungi gli altri posti copiando la riga qui sopra e cambiando data-id, x e y -->
+        <rect class="spot zone-bassa" x="380" y="510" width="28" height="18" data-id="Bassa-1" />
+        <rect class="spot zone-bassa" x="415" y="510" width="28" height="18" data-id="Bassa-2" />
+        <rect class="spot zone-bassa" x="450" y="510" width="28" height="18" data-id="Bassa-3" />
+        <rect class="spot zone-bassa" x="485" y="510" width="28" height="18" data-id="Bassa-4" />
+        <rect class="spot zone-bassa" x="520" y="510" width="28" height="18" data-id="Bassa-5" />
+        <rect class="spot zone-bassa" x="380" y="535" width="28" height="18" data-id="Bassa-6" />
+        <rect class="spot zone-bassa" x="415" y="535" width="28" height="18" data-id="Bassa-7" />
+        <rect class="spot zone-bassa" x="450" y="535" width="28" height="18" data-id="Bassa-8" />
+        <rect class="spot zone-bassa" x="485" y="535" width="28" height="18" data-id="Bassa-9" />
+        <rect class="spot zone-bassa" x="520" y="535" width="28" height="18" data-id="Bassa-10" />
+        <rect class="spot zone-bassa" x="380" y="560" width="28" height="18" data-id="Bassa-11" />
+        <rect class="spot zone-bassa" x="415" y="560" width="28" height="18" data-id="Bassa-12" />
+        <rect class="spot zone-bassa" x="450" y="560" width="28" height="18" data-id="Bassa-13" />
+        <rect class="spot zone-bassa" x="485" y="560" width="28" height="18" data-id="Bassa-14" />
+        <rect class="spot zone-bassa" x="520" y="560" width="28" height="18" data-id="Bassa-15" />
       </g>
 
-      <!-- 3. STALLI ZONA ALTA (Da riposizionare) -->
+      <!-- 3. ZONA ALTA (20 Posti: Alta-1 ... Alta-20) -->
       <g id="zona-alta">
-        <rect class="spot zone-alta" x="800" y="300" width="40" height="20" data-id="Alta-1" />
-        <rect class="spot zone-alta" x="850" y="300" width="40" height="20" data-id="Alta-2" />
+        <rect class="spot zone-alta" x="700" y="310" width="28" height="18" data-id="Alta-1" />
+        <rect class="spot zone-alta" x="735" y="310" width="28" height="18" data-id="Alta-2" />
+        <rect class="spot zone-alta" x="770" y="310" width="28" height="18" data-id="Alta-3" />
+        <rect class="spot zone-alta" x="805" y="310" width="28" height="18" data-id="Alta-4" />
+        <rect class="spot zone-alta" x="840" y="310" width="28" height="18" data-id="Alta-5" />
+        <rect class="spot zone-alta" x="700" y="335" width="28" height="18" data-id="Alta-6" />
+        <rect class="spot zone-alta" x="735" y="335" width="28" height="18" data-id="Alta-7" />
+        <rect class="spot zone-alta" x="770" y="335" width="28" height="18" data-id="Alta-8" />
+        <rect class="spot zone-alta" x="805" y="335" width="28" height="18" data-id="Alta-9" />
+        <rect class="spot zone-alta" x="840" y="335" width="28" height="18" data-id="Alta-10" />
+        <rect class="spot zone-alta" x="700" y="360" width="28" height="18" data-id="Alta-11" />
+        <rect class="spot zone-alta" x="735" y="360" width="28" height="18" data-id="Alta-12" />
+        <rect class="spot zone-alta" x="770" y="360" width="28" height="18" data-id="Alta-13" />
+        <rect class="spot zone-alta" x="805" y="360" width="28" height="18" data-id="Alta-14" />
+        <rect class="spot zone-alta" x="840" y="360" width="28" height="18" data-id="Alta-15" />
+        <rect class="spot zone-alta" x="700" y="385" width="28" height="18" data-id="Alta-16" />
+        <rect class="spot zone-alta" x="735" y="385" width="28" height="18" data-id="Alta-17" />
+        <rect class="spot zone-alta" x="770" y="385" width="28" height="18" data-id="Alta-18" />
+        <rect class="spot zone-alta" x="805" y="385" width="28" height="18" data-id="Alta-19" />
+        <rect class="spot zone-alta" x="840" y="385" width="28" height="18" data-id="Alta-20" />
       </g>
 
-      <!-- 4. STALLI ALLOGGI (Da riposizionare) -->
+      <!-- 4. ZONA ALLOGGI (13 Posti: Alloggi-1 ... Alloggi-13) -->
       <g id="zona-alloggi">
-        <rect class="spot zone-alloggi" x="600" y="700" width="30" height="25" data-id="Alloggi-1" />
-        <rect class="spot zone-alloggi" x="640" y="700" width="30" height="25" data-id="Alloggi-2" />
+        <rect class="spot zone-alloggi" x="540" y="720" width="28" height="18" data-id="Alloggi-1" />
+        <rect class="spot zone-alloggi" x="575" y="720" width="28" height="18" data-id="Alloggi-2" />
+        <rect class="spot zone-alloggi" x="610" y="720" width="28" height="18" data-id="Alloggi-3" />
+        <rect class="spot zone-alloggi" x="645" y="720" width="28" height="18" data-id="Alloggi-4" />
+        <rect class="spot zone-alloggi" x="680" y="720" width="28" height="18" data-id="Alloggi-5" />
+        <rect class="spot zone-alloggi" x="540" y="745" width="28" height="18" data-id="Alloggi-6" />
+        <rect class="spot zone-alloggi" x="575" y="745" width="28" height="18" data-id="Alloggi-7" />
+        <rect class="spot zone-alloggi" x="610" y="745" width="28" height="18" data-id="Alloggi-8" />
+        <rect class="spot zone-alloggi" x="645" y="745" width="28" height="18" data-id="Alloggi-9" />
+        <rect class="spot zone-alloggi" x="680" y="745" width="28" height="18" data-id="Alloggi-10" />
+        <rect class="spot zone-alloggi" x="540" y="770" width="28" height="18" data-id="Alloggi-11" />
+        <rect class="spot zone-alloggi" x="575" y="770" width="28" height="18" data-id="Alloggi-12" />
+        <rect class="spot zone-alloggi" x="610" y="770" width="28" height="18" data-id="Alloggi-13" />
       </g>
+
+      <!-- 5. ZONA STUDENTI (14 Posti: Studenti-1 ... Studenti-14) -->
+      <g id="zona-studenti">
+        <rect class="spot zone-studenti" x="700" y="550" width="28" height="18" data-id="Studenti-1" />
+        <rect class="spot zone-studenti" x="735" y="550" width="28" height="18" data-id="Studenti-2" />
+        <rect class="spot zone-studenti" x="770" y="550" width="28" height="18" data-id="Studenti-3" />
+        <rect class="spot zone-studenti" x="805" y="550" width="28" height="18" data-id="Studenti-4" />
+        <rect class="spot zone-studenti" x="840" y="550" width="28" height="18" data-id="Studenti-5" />
+        <rect class="spot zone-studenti" x="700" y="575" width="28" height="18" data-id="Studenti-6" />
+        <rect class="spot zone-studenti" x="735" y="575" width="28" height="18" data-id="Studenti-7" />
+        <rect class="spot zone-studenti" x="770" y="575" width="28" height="18" data-id="Studenti-8" />
+        <rect class="spot zone-studenti" x="805" y="575" width="28" height="18" data-id="Studenti-9" />
+        <rect class="spot zone-studenti" x="840" y="575" width="28" height="18" data-id="Studenti-10" />
+        <rect class="spot zone-studenti" x="700" y="600" width="28" height="18" data-id="Studenti-11" />
+        <rect class="spot zone-studenti" x="735" y="600" width="28" height="18" data-id="Studenti-12" />
+        <rect class="spot zone-studenti" x="770" y="600" width="28" height="18" data-id="Studenti-13" />
+        <rect class="spot zone-studenti" x="805" y="600" width="28" height="18" data-id="Studenti-14" />
+      </g>
+
+      <!-- 6. ZONA PIAZZALE (6 Posti: Piazzale-1 ... Piazzale-6) -->
+      <g id="zona-piazzale">
+        <rect class="spot zone-piazzale" x="250" y="400" width="28" height="18" data-id="Piazzale-1" />
+        <rect class="spot zone-piazzale" x="285" y="400" width="28" height="18" data-id="Piazzale-2" />
+        <rect class="spot zone-piazzale" x="320" y="400" width="28" height="18" data-id="Piazzale-3" />
+        <rect class="spot zone-piazzale" x="250" y="425" width="28" height="18" data-id="Piazzale-4" />
+        <rect class="spot zone-piazzale" x="285" y="425" width="28" height="18" data-id="Piazzale-5" />
+        <rect class="spot zone-piazzale" x="320" y="425" width="28" height="18" data-id="Piazzale-6" />
+      </g>
+
     </svg>
   </div>
 

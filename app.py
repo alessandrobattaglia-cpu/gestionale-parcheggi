@@ -2,11 +2,9 @@ import streamlit as st
 import datetime
 from datetime import date
 from supabase import create_client, Client
-import plotly.graph_objects as go
-from PIL import Image
-import os
-import pandas as pd  
+import pandas as pd
 import io
+import json
 import streamlit.components.v1 as components
 
 # --- 1. CONNESSIONE AL DATABASE ---
@@ -96,52 +94,24 @@ try:
 except Exception:
     pass
 
-# --- 4. CALIBRAZIONE MAPPA DEFINITIVA ---
-scale_x = 1.22
-scale_y = 0.98
-offset_x = 15
-offset_y = 0
-
-# --- COORDINATE BASE DEI POSTI ---
+# --- 4. LISTA CHIAVI POSTI (Serve per validazioni interne e tendine) ---
 POSTI = {
-    "Bassa-1": {"x": 40, "y": 288},   "Bassa-2": {"x": 72, "y": 272},
-    "Bassa-3": {"x": 105, "y": 257},  "Bassa-4": {"x": 145, "y": 238},
-    "Bassa-5": {"x": 178, "y": 222},  "Bassa-6": {"x": 210, "y": 207},
-    "Bassa-7": {"x": 243, "y": 192},  "Bassa-8": {"x": 276, "y": 176},
-    "Bassa-9": {"x": 308, "y": 160},  "Bassa-10": {"x": 341, "y": 145},
-    "Bassa-11": {"x": 374, "y": 129}, "Bassa-12": {"x": 407, "y": 113},
-    "Bassa-13": {"x": 440, "y": 98},  "Bassa-14": {"x": 472, "y": 82},
-    "Bassa-15": {"x": 505, "y": 66},
-
-    "Piazzale-1": {"x": 458, "y": 150}, "Piazzale-2": {"x": 418, "y": 178},
-    "Piazzale-3": {"x": 393, "y": 215}, "Piazzale-4": {"x": 370, "y": 255},
-    "Piazzale-5": {"x": 348, "y": 296}, "Piazzale-6": {"x": 382, "y": 360},
-
-    "Studenti-7": {"x": 515, "y": 420}, "Studenti-8": {"x": 490, "y": 502},
-    "Studenti-9": {"x": 510, "y": 570}, "Studenti-10": {"x": 510, "y": 630},
-    "Studenti-11": {"x": 510, "y": 690}, "Studenti-12": {"x": 510, "y": 750},
-    "Studenti-13": {"x": 510, "y": 810}, "Studenti-14": {"x": 510, "y": 870},
-    
-    "Alloggi-13": {"x": 59.8, "y": 739.9}, "Alloggi-12": {"x": 59.8, "y": 777.6}, 
-    "Alloggi-11": {"x": 59.8, "y": 815.6}, "Alloggi-10": {"x": 59.8, "y": 853.8}, 
-    "Alloggi-9":  {"x": 59.8, "y": 890.5}, "Alloggi-8":  {"x": 59.8, "y": 927.6}, 
-    "Alloggi-7":  {"x": 59.8, "y": 965.8}, "Alloggi-6":  {"x": 59.8, "y": 1004.8},
-    "Alloggi-5":  {"x": 196.6, "y": 982.0}, "Alloggi-4": {"x": 251.6, "y": 982.0}, 
-    "Alloggi-3":  {"x": 306.4, "y": 982.0}, "Alloggi-2": {"x": 361.9, "y": 982.0}, 
-    "Alloggi-1":  {"x": 415.5, "y": 982.0},
-    
-    "Alta-1": {"x": 845, "y": 502}, "Alta-2": {"x": 845, "y": 537},
-    "Alta-3": {"x": 845, "y": 572}, "Alta-4": {"x": 845, "y": 607},
-    "Alta-5": {"x": 845, "y": 642}, "Alta-6": {"x": 845, "y": 677},
-    "Alta-7": {"x": 845, "y": 712},
-    
-    "Alta-8":  {"x": 1065, "y": 456}, "Alta-9":  {"x": 1065, "y": 492},
-    "Alta-10": {"x": 1065, "y": 528}, "Alta-11": {"x": 1065, "y": 564},
-    "Alta-12": {"x": 1065, "y": 600}, "Alta-13": {"x": 1065, "y": 636},
-    "Alta-14": {"x": 1065, "y": 672}, "Alta-15": {"x": 1065, "y": 708},
-    "Alta-16": {"x": 1065, "y": 744}, "Alta-17": {"x": 1065, "y": 780},
-    "Alta-18": {"x": 1065, "y": 816}, "Alta-19": {"x": 1065, "y": 852},
-    "Alta-20": {"x": 1065, "y": 888}
+    "Bassa-1": {}, "Bassa-2": {}, "Bassa-3": {}, "Bassa-4": {}, "Bassa-5": {},
+    "Bassa-6": {}, "Bassa-7": {}, "Bassa-8": {}, "Bassa-9": {}, "Bassa-10": {},
+    "Bassa-11": {}, "Bassa-12": {}, "Bassa-13": {}, "Bassa-14": {}, "Bassa-15": {},
+    "Piazzale-1": {}, "Piazzale-2": {}, "Piazzale-3": {}, "Piazzale-4": {},
+    "Piazzale-5": {}, "Piazzale-6": {},
+    "Studenti-1": {}, "Studenti-2": {}, "Studenti-3": {}, "Studenti-4": {},
+    "Studenti-5": {}, "Studenti-6": {}, "Studenti-7": {}, "Studenti-8": {},
+    "Studenti-9": {}, "Studenti-10": {}, "Studenti-11": {}, "Studenti-12": {},
+    "Studenti-13": {}, "Studenti-14": {}, 
+    "Alloggi-13": {}, "Alloggi-12": {}, "Alloggi-11": {}, "Alloggi-10": {}, 
+    "Alloggi-9": {}, "Alloggi-8": {}, "Alloggi-7": {}, "Alloggi-6": {},
+    "Alloggi-5": {}, "Alloggi-4": {}, "Alloggi-3": {}, "Alloggi-2": {}, "Alloggi-1": {},
+    "Alta-1": {}, "Alta-2": {}, "Alta-3": {}, "Alta-4": {}, "Alta-5": {},
+    "Alta-6": {}, "Alta-7": {}, "Alta-8": {}, "Alta-9": {}, "Alta-10": {},
+    "Alta-11": {}, "Alta-12": {}, "Alta-13": {}, "Alta-14": {}, "Alta-15": {},
+    "Alta-16": {}, "Alta-17": {}, "Alta-18": {}, "Alta-19": {}, "Alta-20": {}
 }
 
 # --- 5. RECUPERO PRENOTAZIONI DEL GIORNO ---
@@ -163,19 +133,26 @@ if risposta_p.data:
                 "numero_persone": p.get("numero_persone") or 1
             }
 
-# --- 6. COSTRUZIONE E DISEGNO DELLA MAPPA ---
+# --- 6. INIEZIONE DATI E DISEGNO MAPPA VETTORIALE HTML ---
 st.subheader(f"🗺️ Mappa Parcheggi Interattiva - Giorno: {data_visiva}")
 
-def load_map_html(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        return f.read()
+# Convertiamo il dizionario delle prenotazioni in formato JSON
+stato_posti_json = json.dumps(prenotazioni_giorno)
 
+# Carichiamo il file HTML e sostituiamo il segnaposto con i dati veri
 try:
-    map_html = load_map_html("mappa.html")
-    # Renderizza la mappa con altezza ottimale
-    components.html(map_html, height=720, scrolling=True)
+    with open("mappa.html", "r", encoding="utf-8") as f:
+        html_raw = f.read()
+    
+    # Iniettiamo il JSON nel codice JavaScript della mappa
+    html_ready = html_raw.replace("ST_PRENOTAZIONI_JSON_PLACEHOLDER", stato_posti_json)
+    
+    # Renderizziamo la mappa all'interno dell'app Streamlit
+    components.html(html_ready, height=800, scrolling=True)
+except FileNotFoundError:
+    st.error("⚠️ ERRORE: File 'mappa.html' non trovato. Assicurati di aver creato il file nella stessa cartella di app.py.")
 except Exception as e:
-    st.error(f"Errore nel caricamento del file mappa.html: {e}")
+    st.error(f"⚠️ Impossibile caricare la mappa. Dettagli errore: {e}")
 
 # --- 7. LOGICA ASSEGNAZIONE E PRENOTAZIONE ---
 if not is_admin:
@@ -203,21 +180,15 @@ if not is_admin:
 
         # CASO A: IL PERSONALE
         if gruppo_utente == "Personale":
-            st.info("💡 **Modalità Personale:** Fai click direttamente su un pallino **VERDE** nella mappa per selezionare la tua area.")
-            if click_data and "selection" in click_data and click_data["selection"]["points"]:
-                punto_cliccato = click_data["selection"]["points"][0]
-                indice_punto = punto_cliccato.get("point_index", punto_cliccato.get("pointNumber"))
-                
-                if indice_punto is not None and indice_punto < len(chiavi_posto):
-                    posto_scelto = chiavi_posto[indice_punto]
-                    if posto_scelto not in prenotazioni_giorno:
-                        st.success(f"Hai selezionato il posto: **{posto_scelto}**")
-                        if st.button(f"Conferma Prenotazione Posto {posto_scelto} 🟢", use_container_width=True):
-                            supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_scelto}).execute()
-                            st.success(f"Posto {posto_scelto} riservato!")
-                            st.rerun()
-                    else:
-                        st.error("Posto già occupato o non disponibile, scegline un altro.")
+            st.info("💡 **Modalità Personale:** Seleziona un posto libero dal menu a tendina qui sotto.")
+            posti_liberi = [p for p in POSTI.keys() if p not in prenotazioni_giorno]
+            posto_scelto = st.selectbox("Seleziona uno stallo disponibile:", ["-- Seleziona --"] + posti_liberi)
+
+            if posto_scelto != "-- Seleziona --":
+                if st.button(f"Conferma Prenotazione Posto {posto_scelto} 🟢", use_container_width=True):
+                    supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_scelto}).execute()
+                    st.success(f"Posto {posto_scelto} riservato!")
+                    st.rerun()
 
         # CASO B: GLI ALLOGGI
         elif gruppo_utente == "Alloggi":
@@ -280,36 +251,41 @@ if not is_admin:
 else:
     st.divider()
     st.subheader("🛠️ Strumenti di Amministrazione Mappa")
-    st.info("💡 **Istruzioni Admin:** Fai click su un pallino **VERDE** sulla mappa per bloccarlo. Clicca su un pallino **ROSSO** per sbloccarlo o forzare la cancellazione.")
+    st.info("💡 **Istruzioni Admin:** Seleziona un posto dal menu per Modificarlo, Bloccarlo o Liberarlo.")
     
-    if click_data and "selection" in click_data and click_data["selection"]["points"]:
-        punto_cliccato = click_data["selection"]["points"][0]
-        indice_punto = punto_cliccato.get("point_index", punto_cliccato.get("pointNumber"))
+    colA, colB = st.columns(2)
+    
+    with colA:
+        posto_admin = st.selectbox("Seleziona uno stallo da gestire:", ["-- Seleziona --"] + list(POSTI.keys()))
         
-        if indice_punto is not None and indice_punto < len(chiavi_posto):
-            posto_scelto = chiavi_posto[indice_punto]
+    with colB:
+        if posto_admin != "-- Seleziona --":
+            st.write("### Azioni disponibili:")
             
-            if posto_scelto not in prenotazioni_giorno:
-                st.success(f"Hai selezionato il posto libero: **{posto_scelto}**")
-                if st.button(f"Rendi NON DISPONIBILE il posto {posto_scelto} ⛔", use_container_width=True):
-                    supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_scelto}).execute()
-                    st.success(f"Posto {posto_scelto} bloccato!")
+            # Se il posto è LIBERO
+            if posto_admin not in prenotazioni_giorno:
+                st.success(f"Il posto **{posto_admin}** attualmente è LIBERO.")
+                if st.button(f"Rendi NON DISPONIBILE il posto {posto_admin} ⛔", use_container_width=True):
+                    supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_str, "posto_id": posto_admin}).execute()
+                    st.success("Posto bloccato con successo!")
                     st.rerun()
+                    
+            # Se il posto è OCCUPATO O BLOCCATO
             else:
-                info_p = prenotazioni_giorno[posto_scelto]
+                info_p = prenotazioni_giorno[posto_admin]
                 nome_occ = info_p["username"]
                 
                 if nome_occ.lower() == "admin":
-                    st.warning(f"Il posto **{posto_scelto}** è attualmente impostato como NON DISPONIBILE.")
-                    if st.button(f"Rendi nuovamente DISPONIBILE il posto {posto_scelto} 🔓", use_container_width=True):
+                    st.warning(f"Il posto **{posto_admin}** è bloccato da te (NON DISPONIBILE).")
+                    if st.button(f"Rendi nuovamente DISPONIBILE {posto_admin} 🔓", use_container_width=True):
                         supabase.table("prenotazioni").delete().eq("id", info_p["id_prenotazione"]).execute()
-                        st.success(f"Posto {posto_scelto} sbloccato!")
+                        st.success("Posto sbloccato con successo!")
                         st.rerun()
                 else:
-                    st.warning(f"Il posto **{posto_scelto}** è prenotato da: **{nome_occ}** (Gruppo: {info_p['gruppo']})")
+                    st.error(f"Posto occupato da: **{nome_occ}** (Gruppo: {info_p['gruppo']})")
                     if st.button(f"Cancella d'autorità la prenotazione di {nome_occ} 🗑️", use_container_width=True):
                         supabase.table("prenotazioni").delete().eq("id", info_p["id_prenotazione"]).execute()
-                        st.success(f"Prenotazione rimossa con successo!")
+                        st.success("Prenotazione rimossa con successo!")
                         st.rerun()
 
     st.divider()

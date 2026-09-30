@@ -6,9 +6,9 @@
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: transparent; }
     .map-container { background: white; padding: 10px; border-radius: 12px; border: 1px solid #e0e0e0; }
     
-    /* Stili base per i posti */
-    rect.spot { cursor: pointer; stroke: #2c3e50; stroke-width: 1.5; transition: all 0.3s; rx: 3px; ry: 3px; }
-    rect.spot:hover { stroke-width: 3; filter: brightness(1.1); }
+    /* Stili base per i posti auto */
+    rect.spot { cursor: pointer; stroke: #2c3e50; stroke-width: 1.5; transition: all 0.3s; rx: 3px; ry: 3px; opacity: 0.85; }
+    rect.spot:hover { stroke-width: 3; filter: brightness(1.2); opacity: 1; }
     
     /* Colori delle zone (Liberi) */
     .zone-bassa { fill: #f1c40f; }      /* Giallo */
@@ -16,8 +16,8 @@
     .zone-alloggi { fill: #2ecc71; }    /* Verde */
     
     /* Colori degli stati (Occupati) */
-    .occupied { fill: #e74c3c !important; }    /* Rosso - Occupato normale */
-    .blocked { fill: #7f8c8d !important; }     /* Grigio - Bloccato da Admin */
+    .occupied { fill: #e74c3c !important; opacity: 0.9; }    /* Rosso - Occupato */
+    .blocked { fill: #7f8c8d !important; opacity: 0.9; }     /* Grigio - Bloccato Admin */
 
     /* Stile del Tooltip (Fumetto info) */
     #tooltip {
@@ -32,85 +32,57 @@
   <div id="tooltip"></div>
 
   <div class="map-container">
+    <!-- viewBox: gestisce le proporzioni. Modifica 1100 e 950 a seconda delle dimensioni reali del tuo screenshot se necessario -->
     <svg viewBox="0 0 1100 950" width="100%" height="750">
-      <defs>
-        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f0f0f0" stroke-width="0.5"/>
-        </pattern>
-      </defs>
-      <rect width="1100" height="950" fill="url(#grid)" />
+      
+      <!-- 1. LA TUA IMMAGINE DI SFONDO -->
+      <image href="ST_BACKGROUND_IMAGE_PLACEHOLDER" x="0" y="0" width="1100" height="950" preserveAspectRatio="none" />
 
-      <!-- ETICHETTE ZONE -->
-      <rect x="420" y="120" width="100" height="40" fill="#3498db" stroke="#333" rx="4"/>
-      <text x="470" y="145" fill="white" font-size="12" font-weight="bold" text-anchor="middle">CHIESA</text>
-      <text x="950" y="420" font-size="16" font-weight="bold" fill="#d35400" text-anchor="middle">ZONA ALTA</text>
-      <text x="350" y="930" font-size="16" font-weight="bold" fill="#27ae60" text-anchor="middle">ZONA AGRICOLA / ALLOGGI</text>
-
-      <!-- ZONA BASSA E STUDENTI (Gialli) -->
+      <!-- 2. STALLI ZONA BASSA (Da riposizionare) -->
       <g id="zona-bassa">
-        <rect class="spot zone-bassa" x="80" y="280" width="40" height="20" data-id="Bassa-1" />
-        <rect class="spot zone-bassa" x="130" y="260" width="40" height="20" data-id="Bassa-2" />
-        <rect class="spot zone-bassa" x="180" y="240" width="40" height="20" data-id="Bassa-3" />
-        <rect class="spot zone-bassa" x="230" y="220" width="40" height="20" data-id="Bassa-4" />
-        <rect class="spot zone-bassa" x="280" y="200" width="40" height="20" data-id="Bassa-5" />
-        
-        <rect class="spot zone-bassa" x="380" y="150" width="40" height="20" data-id="Bassa-6" />
-        <rect class="spot zone-bassa" x="430" y="130" width="40" height="20" data-id="Bassa-7" />
-        
-        <!-- Posti Studenti Centrali (Esempio) -->
-        <rect class="spot zone-bassa" x="510" y="420" width="25" height="40" data-id="Studenti-7" />
-        <rect class="spot zone-bassa" x="510" y="470" width="25" height="40" data-id="Studenti-8" />
-        <rect class="spot zone-bassa" x="510" y="520" width="25" height="40" data-id="Studenti-9" />
+        <!-- Esempio: cambia le coordinate x e y per farli combaciare con le strade della tua immagine -->
+        <rect class="spot zone-bassa" x="400" y="500" width="40" height="20" data-id="Bassa-1" />
+        <rect class="spot zone-bassa" x="450" y="500" width="40" height="20" data-id="Bassa-2" />
+        <!-- Aggiungi gli altri posti copiando la riga qui sopra e cambiando data-id, x e y -->
       </g>
 
-      <!-- ZONA ALTA (Arancioni) -->
+      <!-- 3. STALLI ZONA ALTA (Da riposizionare) -->
       <g id="zona-alta">
-        <rect class="spot zone-alta" x="845" y="500" width="40" height="20" data-id="Alta-1" />
-        <rect class="spot zone-alta" x="845" y="530" width="40" height="20" data-id="Alta-2" />
-        <rect class="spot zone-alta" x="845" y="560" width="40" height="20" data-id="Alta-3" />
-        
-        <rect class="spot zone-alta" x="1065" y="450" width="40" height="20" data-id="Alta-8" />
-        <rect class="spot zone-alta" x="1065" y="480" width="40" height="20" data-id="Alta-9" />
-        <rect class="spot zone-alta" x="1065" y="510" width="40" height="20" data-id="Alta-10" />
+        <rect class="spot zone-alta" x="800" y="300" width="40" height="20" data-id="Alta-1" />
+        <rect class="spot zone-alta" x="850" y="300" width="40" height="20" data-id="Alta-2" />
       </g>
 
-      <!-- ZONA ALLOGGI (Verdi) -->
+      <!-- 4. STALLI ALLOGGI (Da riposizionare) -->
       <g id="zona-alloggi">
-        <rect class="spot zone-alloggi" x="60" y="740" width="30" height="25" data-id="Alloggi-13" />
-        <rect class="spot zone-alloggi" x="60" y="780" width="30" height="25" data-id="Alloggi-12" />
-        <rect class="spot zone-alloggi" x="196" y="980" width="30" height="25" data-id="Alloggi-5" />
-        <rect class="spot zone-alloggi" x="251" y="980" width="30" height="25" data-id="Alloggi-4" />
+        <rect class="spot zone-alloggi" x="600" y="700" width="30" height="25" data-id="Alloggi-1" />
+        <rect class="spot zone-alloggi" x="640" y="700" width="30" height="25" data-id="Alloggi-2" />
       </g>
     </svg>
   </div>
 
   <script>
-    // Questo tag verrà rimpiazzato dal dizionario Python
     const prenotazioniDB = ST_PRENOTAZIONI_JSON_PLACEHOLDER;
-    
     const tooltip = document.getElementById("tooltip");
 
     document.querySelectorAll('.spot').forEach(spot => {
       const postoId = spot.getAttribute('data-id');
       const info = prenotazioniDB[postoId];
 
-      // Se il posto esiste nel database delle prenotazioni odierne
       if (info) {
         if (info.username.toLowerCase() === 'admin') {
-          spot.classList.add('blocked'); // Bloccato (Grigio)
+          spot.classList.add('blocked');
         } else {
-          spot.classList.add('occupied'); // Occupato (Rosso)
+          spot.classList.add('occupied');
         }
       }
 
-      // Gestione comparsa Tooltip
       spot.addEventListener('mousemove', (e) => {
         let text = `🚘 Stallo: ${postoId}\n`;
         if (info) {
           if (info.username.toLowerCase() === 'admin') {
             text += `⛔ STATO: NON DISPONIBILE`;
           } else {
-            text += `👤 Assegnato a: ${info.username}\n🏢 Gruppo: ${info.gruppo}\n👥 Persone a bordo: ${info.numero_persone}`;
+            text += `👤 Assegnato a: ${info.username}\n🏢 Gruppo: ${info.gruppo}\n👥 A bordo: ${info.numero_persone}`;
           }
         } else {
           text += `✅ STATO: LIBERO`;

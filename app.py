@@ -26,9 +26,21 @@ GRUPPI_STUDENTI = {
     "Sistemi Zootecnici 1":     {"giorni_default": [2, 3, 4]},
     "Sistemi Zootecnici 2":     {"giorni_default": [2, 3, 4]},
     "Enologia e Viticoltura 1": {"giorni_default": [2, 3, 4]},
-    "Enologia e Viticoltura 2": {"giorni_default": [2, 3, 4]},
+    # ⚠️️ DISATTIVATO FINO A FEBBRAIO (Lista giorni vuota)
+    "Enologia e Viticoltura 2": {"giorni_default": []},
+    
     "Precision Farming 1":      {"giorni_default": [2, 3, 4]},
     "Agricoltura 4.0 2":        {"giorni_default": [2, 3, 4]},
+}
+
+MAPPA_GIORNI_SETTIMANA = {
+    "Lunedì": 0, 
+    "Martedì": 1, 
+    "Mercoledì": 2, 
+    "Giovedì": 3, 
+    "Venerdì": 4, 
+    "Sabato": 5, 
+    "Domenica": 6
 }
 
 TOTALE_POSTI_STUDENTI = 15 + 20 + 19  # 54 Posti (Bassa, Alta, Piazzale)
@@ -150,10 +162,10 @@ if st.sidebar.button("Log out ❌", use_container_width=True):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# Pulizia vecchi dati (3 giorni fa)
+# Pulizia vecchi dati (3 giorni fa, escludendo le assegnazioni permanenti)
 try:
     data_limite = oggi - datetime.timedelta(days=3)
-    supabase.table("prenotazioni").delete().lt("data", data_limite.strftime("%Y-%m-%d")).execute()
+    supabase.table("prenotazioni").delete().lt("data", data_limite.strftime("%Y-%m-%d")).neq("data", DATA_PERMANENTE).execute()
 except Exception:
     pass
 
@@ -424,12 +436,11 @@ else:
                         st.success("Prenotazione rimossa!")
                         st.rerun()
 
-    # TAB 2: ASSEGNAZIONE STAFF PER GIORNI (NUOVA FUNZIONALITÀ)
+    # TAB 2: ASSEGNAZIONE RICORRENTE & REVOCA STAFF
     with tab2:
         st.write("### 💼 Assegnazione Diretta Posti Staff")
-        st.info("Da qui puoi assegnare un posto della zona Staff ad un utente specifico dello Staff per un giorno specifico o in modo permanente.")
+        st.info("Assegna posti Staff per un singolo giorno, per giorni ricorrenti (es. tutti i Giovedì) o in modo permanente.")
         
-        # Recupera tutti gli utenti appartenenti al gruppo Staff
         utenti_staff = []
         try:
             res_s = supabase.table("utenti").select("id, username, targa").eq("gruppo", "Staff").execute()
@@ -439,7 +450,7 @@ else:
             pass
 
         if not utenti_staff:
-            st.warning("Nessun utente appartenente al gruppo 'Staff' trovato nel database.")
+            st.warning("⚠️️ Nessun utente appartenente al gruppo 'Staff' trovato nel database.")
         else:
             col_s1, col_s2 = st.columns(2)
             
@@ -447,64 +458,144 @@ else:
                 membro_scelto = st.selectbox(
                     "Seleziona Membro Staff:",
                     options=utenti_staff,
-                    format_func=lambda u: f"{u['username']} (Targa: {u.get('targa', '-')})"
+                    format_func=lambda u: f"{u['username']} (Targa: {u.get('targa', '-')})",
+                    key="sb_staff_member"
                 )
                 
-                data_assegnazione = st.date_input("Data di Assegnazione:", value=data_scelta, min_value=oggi)
-                data_ass_str = data_assegnazione.strftime("%Y-%m-%d")
+                modalita_assegnazione = st.radio(
+                    "Modalità di Assegnazione:",
+                    ["Giorni Ricorrenti (es. tutti i Giovedì)", "Singola Data", "Permanente (Fissa)"],
+                    key="radio_mod_staff"
+                )
                 
-                is_permanente = st.checkbox("Assegnazione Fissa Permanente (Senza Scadenza)")
-                data_salvataggio = DATA_PERMANENTE if is_permanente else data_ass_str
-
             with col_s2:
                 posti_staff_lista = [f"Staff-{i}" for i in range(1, 23)]
-                posto_staff_scelto = st.selectbox("Seleziona Posto Staff:", posti_staff_lista)
-                turno_staff_scelto = st.selectbox("Fascia Oraria Staff:", ["TUTTO_IL_GIORNO", "MATTINO", "POMERIGGIO"])
+                posto_staff_scelto = st.selectbox("Seleziona Posto Staff:", posti_staff_lista, key="sb_staff_spot")
+                turno_staff_scelto = st.selectbox("Fascia Oraria Staff:", ["TUTTO_IL_GIORNO", "MATTINO", "POMERIGGIO"], key="sb_staff_turno")
 
-            if st.button("Assegna Posto Staff 🟢", use_container_width=True):
-                # Verifica se il posto è già occupato per quella data e fascia
-                pr_esist = []
-                try:
-                    resp_chk = supabase.table("prenotazioni").select("id, turno").eq("posto_id", posto_staff_scelto).eq("data", data_salvataggio).execute()
-                    if resp_chk.data:
-                        pr_esist = resp_chk.data
-                except Exception:
-                    pass
+            # Configurazione in base alla modalità scelta
+            date_da_inserire = []
+            
+            if modalita_assegnazione == "Singola Data":
+                data_singola = st.date_input("Seleziona la Data:", value=data_scelta, min_value=oggi, key="dt_staff_singola")
+                date_da_inserire.append(data_singola.strftime("%Y-%m-%d"))
+                
+            elif modalita_assegnazione == "Permanente (Fissa)":
+                st.info("📌 Il posto verrà riservato a tempo indeterminato (data speciale 2099-12-31).")
+                date_da_inserire.append(DATA_PERMANENTE)
+                
+            else: # Giorni Ricorrenti
+                st.write("**Seleziona i Giorni e il Periodo di Assegnazione:**")
+                giorni_selezionati = st.multiselect(
+                    "Giorni della settimana:",
+                    options=["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"],
+                    default=["Giovedì"],
+                    key="ms_giorni_staff"
+                )
+                
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    d_inizio = st.date_input("Data Inizio:", value=oggi, min_value=oggi, key="dt_inizio_staff")
+                with col_p2:
+                    d_fine = st.date_input("Data Fine:", value=oggi + datetime.timedelta(days=90), min_value=d_inizio, key="dt_fine_staff")
+                
+                if giorni_selezionati and d_inizio <= d_fine:
+                    giorni_nums = [MAPPA_GIORNI_SETTIMANA[g] for g in giorni_selezionati]
+                    curr_d = d_inizio
+                    while curr_d <= d_fine:
+                        if curr_d.weekday() in giorni_nums:
+                            date_da_inserire.append(curr_d.strftime("%Y-%m-%d"))
+                        curr_d += datetime.timedelta(days=1)
+                    st.caption(f"🗓️ Verranno generate **{len(date_da_inserire)}** prenotazioni nell'intervallo selezionato.")
 
-                if pr_esist:
-                    st.error(f"❌ Il **{posto_staff_scelto}** risulta già assegnato per la data o la fascia selezionata.")
+            # Tasto Conferma Assegnazione
+            if st.button("Assegna Posto Staff 🟢", use_container_width=True, key="btn_confirm_staff"):
+                if not date_da_inserire:
+                    st.error("❌ Nessuna data valida selezionata per l'assegnazione.")
                 else:
-                    supabase.table("prenotazioni").insert({
-                        "utente_id": membro_scelto["id"],
-                        "data": data_salvataggio,
-                        "posto_id": posto_staff_scelto,
-                        "turno": turno_staff_scelto
-                    }).execute()
-                    st.success(f"🎉 Posto **{posto_staff_scelto}** assegnato con successo a **{membro_scelto['username']}** per il giorno {data_assegnazione.strftime('%d/%m/%Y')}!")
-                    st.rerun()
+                    # Verifica occupancy esistente per le date selezionate
+                    try:
+                        res_check = supabase.table("prenotazioni").select("data, posto_id, turno").eq("posto_id", posto_staff_scelto).in_("data", date_da_inserire).execute()
+                        gia_occupate = [r["data"] for r in (res_check.data or []) if occupato_in_fascia([r], turno_staff_scelto)]
+                    except Exception:
+                        gia_occupate = []
+                    
+                    date_valide = [d for d in date_da_inserire if d not in gia_occupate]
+                    
+                    if gia_occupate:
+                        st.warning(f"⚠️ Il posto **{posto_staff_scelto}** era già occupato in {len(gia_occupate)} date. Verrà assegnato solo per le date libere.")
+                    
+                    if date_valide:
+                        payload = [
+                            {
+                                "utente_id": membro_scelto["id"],
+                                "data": d_val,
+                                "posto_id": posto_staff_scelto,
+                                "turno": turno_staff_scelto
+                            }
+                            for d_val in date_valide
+                        ]
+                        supabase.table("prenotazioni").insert(payload).execute()
+                        st.success(f"🎉 Assegnato il posto **{posto_staff_scelto}** a **{membro_scelto['username']}** per **{len(date_valide)}** giorni!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Nessuna data disponibile (tutte le date risultano già occupate per quel posto/turno).")
 
             st.divider()
-            st.write("### 📋 Assegnazioni Staff Attive")
+            
+            # --- SEZIONE GESTIONE E CANCELLAZIONE ASSEGNAZIONI STAFF ---
+            st.write("### 🗑️ Gestione e Revoca Assegnazioni Staff")
+            
+            col_del1, col_del2 = st.columns(2)
+            with col_del1:
+                filtro_utente_del = st.selectbox(
+                    "Filtra per Utente Staff da visualizzare/cancellare:",
+                    options=["-- Tutti --"] + [u["username"] for u in utenti_staff],
+                    key="sb_filtro_del_staff"
+                )
+            
+            with col_del2:
+                if filtro_utente_del != "-- Tutti --":
+                    if st.button(f"Revoca TUTTE le prenotazioni di {filtro_utente_del} ⚠️", key="btn_del_all_user"):
+                        u_target = next((u for u in utenti_staff if u["username"] == filtro_utente_del), None)
+                        if u_target:
+                            supabase.table("prenotazioni").delete().eq("utente_id", u_target["id"]).execute()
+                            st.success(f"Tutte le assegnazioni di {filtro_utente_del} sono state revocate con successo!")
+                            st.rerun()
+
             try:
-                res_all_staff = supabase.table("prenotazioni").select("id, data, posto_id, turno, utenti(username, targa, gruppo)").execute()
+                res_all_staff = supabase.table("prenotazioni").select("id, data, posto_id, turno, utente_id, utenti(username, targa, gruppo)").execute()
                 staff_rows = []
                 if res_all_staff.data:
                     for row in res_all_staff.data:
                         u_inf = row.get("utenti") or {}
                         if u_inf.get("gruppo") == "Staff" or str(row.get("posto_id")).startswith("Staff"):
-                            dt_str = row.get("data")
-                            staff_rows.append({
-                                "ID": row["id"],
-                                "Utente": u_inf.get("username", "-"),
-                                "Targa": u_inf.get("targa", "-"),
-                                "Posto": row.get("posto_id"),
-                                "Data": "PERMANENTE" if dt_str == DATA_PERMANENTE else dt_str,
-                                "Fascia": row.get("turno", "TUTTO_IL_GIORNO")
-                            })
+                            if filtro_utente_del == "-- Tutti --" or u_inf.get("username") == filtro_utente_del:
+                                dt_str = row.get("data")
+                                staff_rows.append({
+                                    "id": row["id"],
+                                    "Utente": u_inf.get("username", "-"),
+                                    "Targa": u_inf.get("targa", "-"),
+                                    "Posto": row.get("posto_id"),
+                                    "Data": "PERMANENTE" if dt_str == DATA_PERMANENTE else dt_str,
+                                    "Fascia": row.get("turno", "TUTTO_IL_GIORNO")
+                                })
+                
                 if staff_rows:
-                    st.dataframe(pd.DataFrame(staff_rows), use_container_width=True)
+                    st.write(f"Trovate **{len(staff_rows)}** assegnazioni attive:")
+                    
+                    for row_s in staff_rows:
+                        col_r1, col_r2, col_r3, col_r4, col_r5 = st.columns([2, 2, 2, 2, 1])
+                        col_r1.write(f"👤 **{row_s['Utente']}** ({row_s['Targa']})")
+                        col_r2.write(f"🅿️ Posto: **{row_s['Posto']}**")
+                        col_r3.write(f"📅 Data: `{row_s['Data']}`")
+                        col_r4.write(f"🕒 {row_s['Fascia']}")
+                        if col_r5.button("❌", key=f"del_staff_{row_s['id']}"):
+                            supabase.table("prenotazioni").delete().eq("id", row_s["id"]).execute()
+                            st.success(f"Assegnazione {row_s['Posto']} rimossa!")
+                            st.rerun()
                 else:
-                    st.info("Nessuna assegnazione Staff al momento.")
+                    st.info("Nessuna assegnazione Staff trovata con i filtri correnti.")
             except Exception as ex:
                 st.error(f"Errore caricamento assegnazioni staff: {ex}")
 

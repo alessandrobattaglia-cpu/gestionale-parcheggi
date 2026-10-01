@@ -13,21 +13,26 @@ url: str = st.secrets["SUPABASE_URL"]
 key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
-# --- CONFIGURAZIONE RESTRIZIONI GRUPPI STUDENTI ---
+# --- CONFIGURAZIONE RESTRIZIONI GRUPPI STUDENTI DEFINITIVI ---
+# Lunedì=0, Martedì=1, Mercoledì=2, Giovedì=3, Venerdì=4, Sabato=5, Domenica=6
 RESTRIZIONI_GRUPPI = {
-    "Marketing 1":    {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
-    "Marketing 2":    {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
-    "Agro 1":         {"giorni_consentiti": [2, 3, 4], "max_posti": 4},
-    "Agro 2":         {"giorni_consentiti": [2, 3, 4], "max_posti": 4},
-    "Food 1":         {"giorni_consentiti": [0, 1, 4], "max_posti": 3},
-    "Food 2":         {"giorni_consentiti": [0, 1, 4], "max_posti": 3},
-    "Zootecnia 1":    {"giorni_consentiti": [1, 2, 3], "max_posti": 4},
-    "Zootecnia 2":    {"giorni_consentiti": [1, 2, 3], "max_posti": 4},
-    "Viticoltura 1":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
-    "Viticoltura 2":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
+    # GRUPPO 1: Lunedì - Martedì - Mercoledì
+    "Marketing 1":              {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
+    "Marketing 2":              {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
+    "Wine Sales 1":             {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
+    "Food Quality Management 1": {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
+    "Filiere Gastronomiche 2":  {"giorni_consentiti": [0, 1, 2], "max_posti": 5},
+
+    # GRUPPO 2: Mercoledì - Giovedì - Venerdì
+    "Sistemi Zootecnici 1":     {"giorni_consentiti": [2, 3, 4], "max_posti": 5},
+    "Sistemi Zootecnici 2":     {"giorni_consentiti": [2, 3, 4], "max_posti": 5},
+    "Enologia e Viticoltura 1": {"giorni_consentiti": [2, 3, 4], "max_posti": 5},
+    "Enologia e Viticoltura 2": {"giorni_consentiti": [2, 3, 4], "max_posti": 5},
+    "Precision Farming 1":      {"giorni_consentiti": [2, 3, 4], "max_posti": 5},
+    "Agricoltura 4.0 2":        {"giorni_consentiti": [2, 3, 4], "max_posti": 5},
 }
 
-DATA_PERMANENTE = "2099-12-31"  # Data usata nel database per indicare prenotazioni fisse
+DATA_PERMANENTE = "2099-12-31"  # Data usata nel database per indicare prenotazioni fisse per lo Staff
 
 # --- 2. CONFIGURAZIONE INTERFACCIA ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
@@ -142,7 +147,7 @@ if risposta_p.data:
                 "tipo": "giornaliera"
             }
 
-# 2. Recupera eventuali prenotazioni permanenti (fisse per Staff/Docenti)
+# 2. Recupera eventuali prenotazioni permanenti (fisse per Staff)
 risposta_perm = supabase.table("prenotazioni").select("id, posto_id, utente_id, utenti(username, targa, gruppo)").eq("data", DATA_PERMANENTE).execute()
 if risposta_perm.data:
     for p in risposta_perm.data:

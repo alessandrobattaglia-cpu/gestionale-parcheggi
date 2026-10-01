@@ -27,6 +27,8 @@ RESTRIZIONI_GRUPPI = {
     "Viticoltura 2":  {"giorni_consentiti": [0, 3, 4], "max_posti": 3},
 }
 
+DATA_PERMANENTE = "2099-12-31"  # Data usata nel database per indicare prenotazioni fisse
+
 # --- 2. CONFIGURAZIONE INTERFACCIA ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
 st.title("🚗 Parcheggi Symposium - Gestione Assegnazioni")
@@ -140,8 +142,8 @@ if risposta_p.data:
                 "tipo": "giornaliera"
             }
 
-# 2. Recupera eventuali prenotazioni permanenti (fissee per Staff/Docenti)
-risposta_perm = supabase.table("prenotazioni").select("id, posto_id, utente_id, utenti(username, targa, gruppo)").eq("data", "PERMANENTE").execute()
+# 2. Recupera eventuali prenotazioni permanenti (fisse per Staff/Docenti)
+risposta_perm = supabase.table("prenotazioni").select("id, posto_id, utente_id, utenti(username, targa, gruppo)").eq("data", DATA_PERMANENTE).execute()
 if risposta_perm.data:
     for p in risposta_perm.data:
         p_id = p.get("posto_id")
@@ -183,18 +185,18 @@ try:
 except FileNotFoundError:
     st.error("⚠️ ERRORE: File 'mappa.html' non trovato.")
 except Exception as e:
-    st.error(f"⚠️️ Impossibile caricare la mappa: {e}")
+    st.error(f"⚠ Impossibile caricare la mappa: {e}")
 
 # --- 7. LOGICA PRENOTAZIONE E ASSEGNAZIONE ---
 st.divider()
 
 if not is_admin:
     # Controlla se l'utente ha già una prenotazione per questo giorno o permanente
-    ha_gia_prenotato = supabase.table("prenotazioni").select("id, posto_id, data").eq("utente_id", utente_loggato["id"]).in_("data", [data_str, "PERMANENTE"]).execute()
+    ha_gia_prenotato = supabase.table("prenotazioni").select("id, posto_id, data").eq("utente_id", utente_loggato["id"]).in_("data", [data_str, DATA_PERMANENTE]).execute()
     
     if ha_gia_prenotato.data:
         p_info = ha_gia_prenotato.data[0]
-        tipo_str = "Permanente" if p_info["data"] == "PERMANENTE" else f"per il giorno {data_visiva}"
+        tipo_str = "Permanente" if p_info["data"] == DATA_PERMANENTE else f"per il giorno {data_visiva}"
         st.warning(f"🏷️ Hai già assegnato il **Posto: {p_info['posto_id']}** ({tipo_str}).")
         if st.button("Cancella la mia prenotazione ❌", use_container_width=True):
             supabase.table("prenotazioni").delete().eq("id", p_info["id"]).execute()
@@ -231,7 +233,7 @@ if not is_admin:
                 
                 if posto_scelto_staff != "-- Seleziona --":
                     if st.button(f"Conferma Assegnazione {posto_scelto_staff} 🟢", use_container_width=True):
-                        data_salvataggio = "PERMANENTE" if "Permanente" in tipo_prenotazione else data_str
+                        data_salvataggio = DATA_PERMANENTE if "Permanente" in tipo_prenotazione else data_str
                         supabase.table("prenotazioni").insert({"utente_id": utente_loggato["id"], "data": data_salvataggio, "posto_id": posto_scelto_staff}).execute()
                         st.success(f"Posto {posto_scelto_staff} assegnato con successo!")
                         st.rerun()
@@ -323,11 +325,11 @@ else:
         lista_excel = []
         for item in risposta_t.data:
             u_info = item.get("utenti") or {}
-            p_data_raw = item.get("data")
+            p_data_raw = str(item.get("data", ""))
             p_user = u_info.get("username", "Occupato")
             
             lista_excel.append({
-                "Data": "PERMANENTE" if p_data_raw == "PERMANENTE" else p_data_raw,
+                "Data": "PERMANENTE" if p_data_raw == DATA_PERMANENTE else p_data_raw,
                 "Posto": item.get("posto_id"),
                 "Utente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
                 "Gruppo": u_info.get("gruppo", "-") if p_user.lower() != 'admin' else "-",

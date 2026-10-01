@@ -14,7 +14,6 @@ key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # --- CONFIGURAZIONE GRUPPI STUDENTI & GIORNI PREDEFINITI ---
-# Lunedì=0, Martedì=1, Mercoledì=2, Giovedì=3, Venerdì=4, Sabato=5, Domenica=6
 GRUPPI_STUDENTI = {
     # GRUPPO 1: Lunedì - Martedì - Mercoledì
     "Marketing 1":              {"giorni_default": [0, 1, 2]},
@@ -37,14 +36,10 @@ DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse Staff
 
 # --- FUNZIONI DI CALCOLO DINAMICO ---
 def get_corsi_presenti(data_obj):
-    """Restituisce la lista dei corsi presenti per una data tenendo conto di calendario ed eccezioni Admin."""
     giorno_sett = data_obj.weekday()
     data_str = data_obj.strftime("%Y-%m-%d")
-    
-    # Corsi di default per il giorno della settimana
     presenti = set([grp for grp, info in GRUPPI_STUDENTI.items() if giorno_sett in info["giorni_default"]])
     
-    # Sovrascritture dell'Admin
     try:
         res = supabase.table("presenze_corsi").select("gruppo, stato").eq("data", data_str).execute()
         if res.data:
@@ -60,7 +55,6 @@ def get_corsi_presenti(data_obj):
     return list(presenti)
 
 def get_numero_studenti_per_gruppo():
-    """Conta il numero reale di studenti registrati nel DB per ogni gruppo."""
     counts = {grp: 0 for grp in GRUPPI_STUDENTI.keys()}
     try:
         res = supabase.table("utenti").select("gruppo").execute()
@@ -74,10 +68,8 @@ def get_numero_studenti_per_gruppo():
     return counts
 
 def calcola_quote_posti(data_obj):
-    """Calcola i posti disponibili per ciascun corso in proporzione al numero di studenti presenti."""
     corsi_pres = get_corsi_presenti(data_obj)
     studenti_counts = get_numero_studenti_per_gruppo()
-    
     totale_studenti_oggi = sum(studenti_counts.get(g, 0) for g in corsi_pres)
     
     quote = {}
@@ -90,7 +82,6 @@ def calcola_quote_posti(data_obj):
             else:
                 quote[g] = 1
     else:
-        # Ripartizione equa di backup se non ci sono iscritti
         quota_equa = max(1, TOTALE_POSTI_STUDENTI // len(corsi_pres)) if corsi_pres else 0
         quote = {g: quota_equa for g in corsi_pres}
         
@@ -177,17 +168,23 @@ POSTI = {
 }
 
 # --- 5. RECUPERO PRENOTAZIONI DAL DATABASE ---
-# Formato: { posto_id: [ list_of_prenotazioni ] }
 prenotazioni_raw = []
 
-resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, turno, utenti(username, targa, gruppo)").in_("data", [data_str, DATA_PERMANENTE]).execute()
-if resp_p.data:
-    prenotazioni_raw = resp_p.data
+# Tentativo di recupero flessibile (gestisce sia il caso in cui la colonna 'turno' esista che non)
+try:
+    resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, turno, utenti(username, targa, gruppo)").in_("data", [data_str, DATA_PERMANENTE]).execute()
+    if resp_p.data:
+        prenotazioni_raw = resp_p.data
+except Exception:
+    resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, utenti(username, targa, gruppo)").in_("data", [data_str, DATA_PERMANENTE]).execute()
+    if resp_p.data:
+        for p in resp_p.data:
+            p["turno"] = "TUTTO_IL_GIORNO"
+        prenotazioni_raw = resp_p.data
 
 def occupato_in_fascia(prenotazioni_posto, fascia_target):
-    """Controlla se un determinato posto è occupato per la fascia richiesta."""
     for p in prenotazioni_posto:
-        t = p.get("turno", "TUTTO_IL_GIORNO")
+        t = p.get("turno", "TUTTO_IL_GIORNO") or "TUTTO_IL_GIORNO"
         if t == "TUTTO_IL_GIORNO":
             return p
         if fascia_target == "Tutto il Giorno":
@@ -196,13 +193,11 @@ def occupato_in_fascia(prenotazioni_posto, fascia_target):
             return p
     return None
 
-# Mappa dello stato per la visualizzazione sulla mappa HTML
 prenotazioni_visibili = {}
 for p in prenotazioni_raw:
     p_id = p.get("posto_id")
-    p_turno = p.get("turno", "TUTTO_IL_GIORNO")
+    p_turno = p.get("turno") or "TUTTO_IL_GIORNO"
     
-    # Controlla se la prenotazione impatta la fascia selezionata
     if fascia_visualizza == "Tutto il Giorno" or p_turno == "TUTTO_IL_GIORNO" or p_turno == fascia_visualizza:
         if p_id and p_id not in prenotazioni_visibili:
             info_u = p.get("utenti") or {}
@@ -240,17 +235,15 @@ except Exception as e:
 # --- 7. LOGICA PRENOTAZIONI ---
 st.divider()
 
-# Calcolo quote dinamiche per la giornata scelta
 quote_dinamiche, corsi_presenti_oggi, numero_iscritti = calcola_quote_posti(data_scelta)
 
 if not is_admin:
-    # Controlla se l'utente ha già una prenotazione attiva per la data
     mie_prenotazioni = [p for p in prenotazioni_raw if p["utente_id"] == utente_loggato["id"]]
     
     if mie_prenotazioni:
         st.warning("🏷️ Hai già le seguenti prenotazioni per questo giorno:")
         for mp in mie_prenotazioni:
-            f_str = mp.get("turno", "TUTTO_IL_GIORNO")
+            f_str = mp.get("turno") or "TUTTO_IL_GIORNO"
             st.write(f"- **Posto {mp['posto_id']}** ({f_str})")
             if st.button(f"Cancella Prenotazione {mp['posto_id']} ({f_str}) ❌", key=f"del_{mp['id']}"):
                 supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
@@ -259,14 +252,12 @@ if not is_admin:
     else:
         st.subheader("📌 Prenota il tuo Posto Auto")
         
-        # Scelta del Turno / Fascia Oraria
         turno_richiesto = st.radio(
             "Seleziona la fascia oraria di cui hai bisogno:",
             ["Mattino", "Pomeriggio", "Tutto il Giorno"],
             horizontal=True
         )
         
-        # Mappatura testo -> DB
         mappa_turno_db = {
             "Mattino": "MATTINO",
             "Pomeriggio": "POMERIGGIO",
@@ -274,7 +265,6 @@ if not is_admin:
         }
         turno_db = mappa_turno_db[turno_richiesto]
 
-        # Funzione helper per verificare posti liberi rispettando i turni
         def trova_posto_libero(prefisso_lista):
             for p in prefisso_lista:
                 prenotazioni_posto = [pr for pr in prenotazioni_raw if pr["posto_id"] == p]
@@ -293,12 +283,13 @@ if not is_admin:
             if posto_trovato:
                 if st.button(f"Conferma Assegnazione Posto {posto_trovato} 🟢", use_container_width=True):
                     d_save = DATA_PERMANENTE if tipo_staff == "Permanente (Fissa)" else data_str
-                    supabase.table("prenotazioni").insert({
+                    data_insert = {
                         "utente_id": utente_loggato["id"],
                         "data": d_save,
                         "posto_id": posto_trovato,
                         "turno": turno_db
-                    }).execute()
+                    }
+                    supabase.table("prenotazioni").insert(data_insert).execute()
                     st.success(f"Posto {posto_trovato} riservato con successo!")
                     st.rerun()
             else:
@@ -346,12 +337,11 @@ if not is_admin:
             
             max_quota = quote_dinamiche.get(gruppo_utente, 0)
             
-            # Conteggio posti occupati dal gruppo nella fascia oraria richiesta
             occupati_gruppo = 0
             for pr in prenotazioni_raw:
                 u_grp = (pr.get("utenti") or {}).get("gruppo")
                 if u_grp == gruppo_utente:
-                    t_pr = pr.get("turno", "TUTTO_IL_GIORNO")
+                    t_pr = pr.get("turno") or "TUTTO_IL_GIORNO"
                     if turno_db == "TUTTO_IL_GIORNO" or t_pr == "TUTTO_IL_GIORNO" or t_pr == turno_db:
                         occupati_gruppo += 1
             
@@ -408,7 +398,7 @@ else:
                 else:
                     u_info = occ.get("utenti") or {}
                     n_occ = u_info.get("username", "Occupato")
-                    st.error(f"Occupato da: **{n_occ}** ({occ.get('turno')})")
+                    st.error(f"Occupato da: **{n_occ}** ({occ.get('turno', 'TUTTO_IL_GIORNO')})")
                     if st.button(f"Rimuovi Prenotazione 🗑️", use_container_width=True):
                         supabase.table("prenotazioni").delete().eq("id", occ["id"]).execute()
                         st.success("Prenotazione rimossa!")
@@ -418,7 +408,6 @@ else:
         st.write(f"### 🗓️ Gestione Presenza Corsi per il giorno **{data_visiva}**")
         st.info("Puoi segnare un corso come PRESENTE (es. lezioni straordinarie) o ASSENTE (es. gita/esami). Le quote posti si ricalcoleranno in automatico.")
         
-        # Recupera lo stato attuale per il giorno scelto
         res_eccez = {}
         try:
             r_ec = supabase.table("presenze_corsi").select("gruppo, stato").eq("data", data_str).execute()
@@ -445,7 +434,6 @@ else:
                     horizontal=True
                 )
                 
-                # Se lo stato modificato differisce dal default o c'era un override, salva su DB
                 if scelta != stato_curr:
                     supabase.table("presenze_corsi").upsert({
                         "data": data_str,
@@ -463,7 +451,7 @@ else:
                 "Corso": grp,
                 "Stato Oggi": "PRESENTE 🟢" if grp in corsi_presenti_oggi else "ASSENTE 🔴",
                 "Iscritti Totali": numero_iscritti.get(grp, 0),
-                "Quota Posti Auto Assignata": quote_dinamiche.get(grp, 0) if grp in corsi_presenti_oggi else 0
+                "Quota Posti Auto Assegnata": quote_dinamiche.get(grp, 0) if grp in corsi_presenti_oggi else 0
             }
             for grp in GRUPPI_STUDENTI.keys()
         ])
@@ -471,7 +459,10 @@ else:
         
         st.divider()
         st.write("### 📋 Download Report Excel Completo")
-        risposta_t = supabase.table("prenotazioni").select("data, posto_id, turno, utenti(username, targa, gruppo)").execute()
+        try:
+            risposta_t = supabase.table("prenotazioni").select("data, posto_id, turno, utenti(username, targa, gruppo)").execute()
+        except Exception:
+            risposta_t = supabase.table("prenotazioni").select("data, posto_id, utenti(username, targa, gruppo)").execute()
         
         if risposta_t.data:
             lista_excel = []

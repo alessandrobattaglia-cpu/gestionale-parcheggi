@@ -170,7 +170,6 @@ POSTI = {
 # --- 5. RECUPERO PRENOTAZIONI DAL DATABASE ---
 prenotazioni_raw = []
 
-# Tentativo di recupero flessibile (gestisce sia il caso in cui la colonna 'turno' esista che non)
 try:
     resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, turno, utenti(username, targa, gruppo)").in_("data", [data_str, DATA_PERMANENTE]).execute()
     if resp_p.data:
@@ -193,6 +192,7 @@ def occupato_in_fascia(prenotazioni_posto, fascia_target):
             return p
     return None
 
+# --- 6. PREPARAZIONE DATI PER MAPPA CON PRIVACY PER LO STAFF ---
 prenotazioni_visibili = {}
 for p in prenotazioni_raw:
     p_id = p.get("posto_id")
@@ -201,16 +201,30 @@ for p in prenotazioni_raw:
     if fascia_visualizza == "Tutto il Giorno" or p_turno == "TUTTO_IL_GIORNO" or p_turno == fascia_visualizza:
         if p_id and p_id not in prenotazioni_visibili:
             info_u = p.get("utenti") or {}
+            
+            # Verifica se è un posto Staff o prenotato da un membro Staff
+            is_staff_spot = str(p_id).startswith("Staff") or info_u.get("gruppo") == "Staff"
+            
+            # MASCHERAMENTO DATO: Studenti e Alloggi vedono solo "Staff"
+            if is_staff_spot and not is_admin and gruppo_utente != "Staff":
+                username_disp = "Staff"
+                targa_disp = "-"
+                gruppo_disp = "Staff"
+            else:
+                username_disp = info_u.get("username", "Occupato")
+                targa_disp = info_u.get("targa", "-")
+                gruppo_disp = info_u.get("gruppo", "")
+
             prenotazioni_visibili[p_id] = {
                 "id_prenotazione": p.get("id"),
                 "utente_id": p.get("utente_id"),
-                "username": info_u.get("username", "Occupato"),
-                "targa": info_u.get("targa", "-"),
-                "gruppo": info_u.get("gruppo", ""),
+                "username": username_disp,
+                "targa": targa_disp,
+                "gruppo": gruppo_disp,
                 "turno": p_turno
             }
 
-# --- 6. MAPPA INTERATTIVA ---
+# --- 7. MAPPA INTERATTIVA ---
 st.subheader(f"🗺️ Mappa Parcheggi - {data_visiva} ({fascia_visualizza})")
 
 def get_base64_image(image_path):
@@ -232,7 +246,7 @@ try:
 except Exception as e:
     st.error(f"⚠️ Impossibile caricare la mappa: {e}")
 
-# --- 7. LOGICA PRENOTAZIONI ---
+# --- 8. LOGICA PRENOTAZIONI UTENTI ---
 st.divider()
 
 quote_dinamiche, corsi_presenti_oggi, numero_iscritti = calcola_quote_posti(data_scelta)
@@ -366,13 +380,19 @@ if not is_admin:
                     else:
                         st.error("❌ Tutti i posti studenti nelle zone verdi sono occupati per questa fascia oraria.")
 
-# --- PANNELLO AMMINISTRATORE ---
+# --- 9. PANNELLO AMMINISTRATORE ---
 else:
     st.divider()
     st.subheader("🛠️ Pannello Amministrazione Parcheggi")
     
-    tab1, tab2, tab3 = st.tabs(["📌 Gestione Posti", "📅 Presenze Corsi (Calendario)", "📋 Report & Quote"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📌 Gestione Posti", 
+        "💼 Assegnazione Staff", 
+        "📅 Presenze Corsi (Calendario)", 
+        "📋 Report & Quote"
+    ])
     
+    # TAB 1: GESTIONE GENERALE POSTI
     with tab1:
         colA, colB = st.columns(2)
         with colA:
@@ -404,7 +424,92 @@ else:
                         st.success("Prenotazione rimossa!")
                         st.rerun()
 
+    # TAB 2: ASSEGNAZIONE STAFF PER GIORNI (NUOVA FUNZIONALITÀ)
     with tab2:
+        st.write("### 💼 Assegnazione Diretta Posti Staff")
+        st.info("Da qui puoi assegnare un posto della zona Staff ad un utente specifico dello Staff per un giorno specifico o in modo permanente.")
+        
+        # Recupera tutti gli utenti appartenenti al gruppo Staff
+        utenti_staff = []
+        try:
+            res_s = supabase.table("utenti").select("id, username, targa").eq("gruppo", "Staff").execute()
+            if res_s.data:
+                utenti_staff = res_s.data
+        except Exception:
+            pass
+
+        if not utenti_staff:
+            st.warning("Nessun utente appartenente al gruppo 'Staff' trovato nel database.")
+        else:
+            col_s1, col_s2 = st.columns(2)
+            
+            with col_s1:
+                membro_scelto = st.selectbox(
+                    "Seleziona Membro Staff:",
+                    options=utenti_staff,
+                    format_func=lambda u: f"{u['username']} (Targa: {u.get('targa', '-')})"
+                )
+                
+                data_assegnazione = st.date_input("Data di Assegnazione:", value=data_scelta, min_value=oggi)
+                data_ass_str = data_assegnazione.strftime("%Y-%m-%d")
+                
+                is_permanente = st.checkbox("Assegnazione Fissa Permanente (Senza Scadenza)")
+                data_salvataggio = DATA_PERMANENTE if is_permanente else data_ass_str
+
+            with col_s2:
+                posti_staff_lista = [f"Staff-{i}" for i in range(1, 23)]
+                posto_staff_scelto = st.selectbox("Seleziona Posto Staff:", posti_staff_lista)
+                turno_staff_scelto = st.selectbox("Fascia Oraria Staff:", ["TUTTO_IL_GIORNO", "MATTINO", "POMERIGGIO"])
+
+            if st.button("Assegna Posto Staff 🟢", use_container_width=True):
+                # Verifica se il posto è già occupato per quella data e fascia
+                pr_esist = []
+                try:
+                    resp_chk = supabase.table("prenotazioni").select("id, turno").eq("posto_id", posto_staff_scelto).eq("data", data_salvataggio).execute()
+                    if resp_chk.data:
+                        pr_esist = resp_chk.data
+                except Exception:
+                    pass
+
+                if pr_esist:
+                    st.error(f"❌ Il **{posto_staff_scelto}** risulta già assegnato per la data o la fascia selezionata.")
+                else:
+                    supabase.table("prenotazioni").insert({
+                        "utente_id": membro_scelto["id"],
+                        "data": data_salvataggio,
+                        "posto_id": posto_staff_scelto,
+                        "turno": turno_staff_scelto
+                    }).execute()
+                    st.success(f"🎉 Posto **{posto_staff_scelto}** assegnato con successo a **{membro_scelto['username']}** per il giorno {data_assegnazione.strftime('%d/%m/%Y')}!")
+                    st.rerun()
+
+            st.divider()
+            st.write("### 📋 Assegnazioni Staff Attive")
+            try:
+                res_all_staff = supabase.table("prenotazioni").select("id, data, posto_id, turno, utenti(username, targa, gruppo)").execute()
+                staff_rows = []
+                if res_all_staff.data:
+                    for row in res_all_staff.data:
+                        u_inf = row.get("utenti") or {}
+                        if u_inf.get("gruppo") == "Staff" or str(row.get("posto_id")).startswith("Staff"):
+                            dt_str = row.get("data")
+                            staff_rows.append({
+                                "ID": row["id"],
+                                "Utente": u_inf.get("username", "-"),
+                                "Targa": u_inf.get("targa", "-"),
+                                "Posto": row.get("posto_id"),
+                                "Data": "PERMANENTE" if dt_str == DATA_PERMANENTE else dt_str,
+                                "Fascia": row.get("turno", "TUTTO_IL_GIORNO")
+                            })
+                if staff_rows:
+                    st.dataframe(pd.DataFrame(staff_rows), use_container_width=True)
+                else:
+                    st.info("Nessuna assegnazione Staff al momento.")
+            except Exception as ex:
+                st.error(f"Errore caricamento assegnazioni staff: {ex}")
+
+    # TAB 3: CALENDARIO PRESENZE CORSI
+    with tab3:
         st.write(f"### 🗓️ Gestione Presenza Corsi per il giorno **{data_visiva}**")
         st.info("Puoi segnare un corso come PRESENTE (es. lezioni straordinarie) o ASSENTE (es. gita/esami). Le quote posti si ricalcoleranno in automatico.")
         
@@ -443,7 +548,8 @@ else:
                     st.success(f"Aggiornata presenza per {grp}!")
                     st.rerun()
 
-    with tab3:
+    # TAB 4: REPORT E QUOTE
+    with tab4:
         st.write("### 📊 Quote Posti Calcolate per Oggi")
         
         df_quote = pd.DataFrame([

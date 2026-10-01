@@ -410,7 +410,7 @@ if not is_admin:
 # --- 9. PANNELLO AMMINISTRATORE ---
 else:
     st.divider()
-    st.subheader("🛠️ Pannello Amministrazione Parcheggi")
+    st.subheader("🛠️️ Pannello Amministrazione Parcheggi")
     
     tab1, tab2, tab3, tab4 = st.tabs([
         "📌 Gestione Posti", 
@@ -520,7 +520,7 @@ else:
                         if curr_d.weekday() in giorni_nums:
                             date_da_inserire.append(curr_d.strftime("%Y-%m-%d"))
                         curr_d += datetime.timedelta(days=1)
-                    st.caption(f"🗓️️ Verranno generate **{len(date_da_inserire)}** prenotazioni nell'intervallo selezionato.")
+                    st.caption(f"🗓 Verranno generate **{len(date_da_inserire)}** prenotazioni nell'intervallo selezionato.")
 
             if st.button("Assegna Posto Staff 🟢", use_container_width=True, key="btn_confirm_staff"):
                 if not date_da_inserire:
@@ -611,7 +611,7 @@ else:
             except Exception as ex:
                 st.error(f"Errore caricamento assegnazioni staff: {ex}")
 
-    # TAB 3: CALENDARIO PRESENZE CORSI
+    # TAB 3: CALENDARIO PRESENZE CORSI (CORRETTO SENZA UPSERT)
     with tab3:
         st.write(f"### 🗓️ Gestione Presenza Corsi per il giorno **{data_visiva}**")
         st.info("Puoi segnare un corso come PRESENTE (es. lezioni straordinarie) o ASSENTE (es. gita/esami). Le quote posti si ricalcoleranno in automatico.")
@@ -643,11 +643,20 @@ else:
                 )
                 
                 if scelta != stato_curr:
-                    supabase.table("presenze_corsi").upsert({
-                        "data": data_str,
-                        "gruppo": grp,
-                        "stato": scelta
-                    }).execute()
+                    # Controllo se esiste già un record per questa data e gruppo
+                    res_chk = supabase.table("presenze_corsi").select("data, gruppo").eq("data", data_str).eq("gruppo", grp).execute()
+                    
+                    if res_chk.data and len(res_chk.data) > 0:
+                        # Se esiste già, aggiorniamo il record
+                        supabase.table("presenze_corsi").update({"stato": scelta}).eq("data", data_str).eq("gruppo", grp).execute()
+                    else:
+                        # Se non esiste, creiamo un nuovo record
+                        supabase.table("presenze_corsi").insert({
+                            "data": data_str,
+                            "gruppo": grp,
+                            "stato": scelta
+                        }).execute()
+                        
                     st.success(f"Aggiornata presenza per {grp}!")
                     st.rerun()
 

@@ -26,8 +26,9 @@ GRUPPI_STUDENTI = {
     "Sistemi Zootecnici 1":     {"giorni_default": [2, 3, 4]},
     "Sistemi Zootecnici 2":     {"giorni_default": [2, 3, 4]},
     "Enologia e Viticoltura 1": {"giorni_default": [2, 3, 4]},
-    # ⚠️️ DISATTIVATO FINO A FEBBRAIO (Lista giorni vuota)
-    "Enologia e Viticoltura 2": {"giorni_default": []},
+    
+    # Disattivato fino a Febbraio
+    "Enologia e Viticoltura 2": {"giorni_default": []}, 
     
     "Precision Farming 1":      {"giorni_default": [2, 3, 4]},
     "Agricoltura 4.0 2":        {"giorni_default": [2, 3, 4]},
@@ -149,7 +150,8 @@ st.sidebar.divider()
 st.sidebar.subheader("📅 Seleziona Giorno e Fascia")
 oggi = date.today()
 
-gruppi_con_finestra = list(GRUPPI_STUDENTI.keys()) + ["Alloggi"]
+# Gruppi limitati a 14 giorni di anticipo
+gruppi_con_finestra = list(GRUPPI_STUDENTI.keys()) + ["Alloggi", "Alloggi 1", "Alloggi 2"]
 max_data = oggi + datetime.timedelta(days=14) if (gruppo_utente in gruppi_con_finestra and not is_admin) else oggi + datetime.timedelta(days=365)
 
 data_scelta = st.sidebar.date_input("Data:", min_value=oggi, max_value=max_data, format="DD/MM/YYYY")
@@ -338,22 +340,35 @@ if not is_admin:
             else:
                 st.error("❌ Nessun Posto Docenti libero per questa fascia oraria.")
 
-        # CASO ALLOGGI
-        elif gruppo_utente == "Alloggi":
-            posti_all = [f"Alloggi-{i}" for i in range(1, 12)]
-            posto_trovato = trova_posto_libero(posti_all)
-            if posto_trovato:
-                if st.button(f"Prenota Posto Alloggi ({posto_trovato}) 🚗", use_container_width=True):
-                    supabase.table("prenotazioni").insert({
-                        "utente_id": utente_loggato["id"],
-                        "data": data_str,
-                        "posto_id": posto_trovato,
-                        "turno": turno_db
-                    }).execute()
-                    st.success(f"🎉 Posto {posto_trovato} assegnato!")
-                    st.rerun()
+        # CASO ALLOGGI (GESTIONE SOTTOGRUPPI 1 E 2)
+        elif gruppo_utente in ["Alloggi", "Alloggi 1", "Alloggi 2"]:
+            giorni_consentiti_alloggi = {
+                "Alloggi 1": [0, 1, 2],  # Lunedì, Martedì, Mercoledì
+                "Alloggi 2": [3, 4],     # Giovedì, Venerdì
+                "Alloggi": [0, 1, 2, 3, 4] # Fallback
+            }
+            
+            giorni_ok = giorni_consentiti_alloggi.get(gruppo_utente, [0, 1, 2, 3, 4])
+            giorno_settimana = data_scelta.weekday()
+            
+            if giorno_settimana not in giorni_ok:
+                str_giorni = "Lunedì, Martedì e Mercoledì" if gruppo_utente == "Alloggi 1" else "Giovedì e Venerdì"
+                st.error(f"❌ Il gruppo **{gruppo_utente}** può prenotare un posto alloggi solo per i giorni: **{str_giorni}**.")
             else:
-                st.error("❌ Posti Alloggi esauriti per la fascia selezionata.")
+                posti_all = [f"Alloggi-{i}" for i in range(1, 12)]
+                posto_trovato = trova_posto_libero(posti_all)
+                if posto_trovato:
+                    if st.button(f"Prenota Posto Alloggi ({posto_trovato}) 🚗", use_container_width=True):
+                        supabase.table("prenotazioni").insert({
+                            "utente_id": utente_loggato["id"],
+                            "data": data_str,
+                            "posto_id": posto_trovato,
+                            "turno": turno_db
+                        }).execute()
+                        st.success(f"🎉 Posto {posto_trovato} assegnato!")
+                        st.rerun()
+                else:
+                    st.error("❌ Posti Alloggi esauriti per la fascia selezionata.")
 
         # CASO STUDENTI (CON VERIFICA PRESENZA E QUOTA DINAMICA)
         else:
@@ -450,7 +465,7 @@ else:
             pass
 
         if not utenti_staff:
-            st.warning("⚠️️ Nessun utente appartenente al gruppo 'Staff' trovato nel database.")
+            st.warning("⚠ Nessun utente appartenente al gruppo 'Staff' trovato nel database.")
         else:
             col_s1, col_s2 = st.columns(2)
             
@@ -473,7 +488,6 @@ else:
                 posto_staff_scelto = st.selectbox("Seleziona Posto Staff:", posti_staff_lista, key="sb_staff_spot")
                 turno_staff_scelto = st.selectbox("Fascia Oraria Staff:", ["TUTTO_IL_GIORNO", "MATTINO", "POMERIGGIO"], key="sb_staff_turno")
 
-            # Configurazione in base alla modalità scelta
             date_da_inserire = []
             
             if modalita_assegnazione == "Singola Data":
@@ -506,14 +520,12 @@ else:
                         if curr_d.weekday() in giorni_nums:
                             date_da_inserire.append(curr_d.strftime("%Y-%m-%d"))
                         curr_d += datetime.timedelta(days=1)
-                    st.caption(f"🗓️ Verranno generate **{len(date_da_inserire)}** prenotazioni nell'intervallo selezionato.")
+                    st.caption(f"🗓️️ Verranno generate **{len(date_da_inserire)}** prenotazioni nell'intervallo selezionato.")
 
-            # Tasto Conferma Assegnazione
             if st.button("Assegna Posto Staff 🟢", use_container_width=True, key="btn_confirm_staff"):
                 if not date_da_inserire:
                     st.error("❌ Nessuna data valida selezionata per l'assegnazione.")
                 else:
-                    # Verifica occupancy esistente per le date selezionate
                     try:
                         res_check = supabase.table("prenotazioni").select("data, posto_id, turno").eq("posto_id", posto_staff_scelto).in_("data", date_da_inserire).execute()
                         gia_occupate = [r["data"] for r in (res_check.data or []) if occupato_in_fascia([r], turno_staff_scelto)]

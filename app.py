@@ -133,8 +133,8 @@ def get_eventi_giorno(data_str):
     except Exception:
         return []
 
-def get_posti_bloccati_evento(data_str):
-    """Restituisce la mappa dei posti bloccati dagli eventi."""
+def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
+    """Restituisce la mappa dei posti bloccati dagli eventi con gestione privacy per singoli posti."""
     eventi = get_eventi_giorno(data_str)
     bloccati = {}
     for ev in eventi:
@@ -143,6 +143,16 @@ def get_posti_bloccati_evento(data_str):
         ev_note = ev.get("note", "")
         ev_blocchi = ev.get("blocchi", "TUTTI")
         
+        # Recupera dettagli dei singoli posti
+        ev_dettagli = ev.get("dettagli_posti") or {}
+        if isinstance(ev_dettagli, str):
+            try:
+                ev_dettagli = json.loads(ev_dettagli)
+            except Exception:
+                ev_dettagli = {}
+        elif not isinstance(ev_dettagli, dict):
+            ev_dettagli = {}
+
         if isinstance(ev_blocchi, str):
             blocchi_list = [b.strip() for b in ev_blocchi.split(",")]
         else:
@@ -151,11 +161,19 @@ def get_posti_bloccati_evento(data_str):
         for p_id in POSTI.keys():
             prefisso = p_id.split("-")[0]
             if "TUTTI" in blocchi_list or prefisso in blocchi_list:
+                # Testo specifico per il posto, se specificato
+                testo_specifico = ev_dettagli.get(p_id, "").strip()
+                if not testo_specifico:
+                    testo_specifico = ev_note if ev_note else "Riservato Evento"
+
+                # PRIVACY: Solo Admin e Staff vedono la nota specifica del singolo posto
+                targa_visibile = testo_specifico if is_staff_or_admin else "Riservato Evento"
+
                 bloccati[p_id] = {
                     "id_prenotazione": f"ev_{ev_id}",
                     "utente_id": None,
                     "username": f"🎉 {ev_nome}",
-                    "targa": ev_note if ev_note else "Riservato Evento",
+                    "targa": targa_visibile,
                     "gruppo": "EVENTO",
                     "turno": "TUTTO_IL_GIORNO"
                 }
@@ -195,6 +213,7 @@ gruppo_utente = utente_loggato.get("gruppo", "Marketing 1")
 targa_utente = utente_loggato.get("targa", "")
 is_admin = (username.lower() == "admin")
 is_alloggi_user = check_is_alloggi(utente_loggato)
+is_staff_or_admin = is_admin or (gruppo_utente == "Staff")
 
 # --- SIDEBAR DI CONTROLLO & GESTIONE ---
 st.sidebar.header("👤 Account")
@@ -250,7 +269,7 @@ except Exception:
         pass
 
 # --- 5. PREPARAZIONE DATI PER MAPPA CON EVENTI E PRIVACY STAFF ---
-posti_bloccati_eventi = get_posti_bloccati_evento(data_str)
+posti_bloccati_eventi = get_posti_bloccati_evento(data_str, is_staff_or_admin=is_staff_or_admin)
 prenotazioni_visibili = {}
 
 # Inserisci blocchi eventi
@@ -329,7 +348,6 @@ if not is_admin:
             dt_txt = "Permanente" if is_perm else data_visiva
             st.write(f"- **Posto {mp['posto_id']}** ({dt_txt})")
             
-            # Gli alloggiati vedono l'assegnazione ma la revoca spetta all'admin
             if not is_alloggi_user:
                 if st.button(f"Cancella Prenotazione {mp['posto_id']} ❌", key=f"del_{mp['id']}"):
                     supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
@@ -338,11 +356,9 @@ if not is_admin:
     else:
         st.subheader("📌 Prenota il tuo Posto Auto")
 
-        # CASO RESIDENTE ALLOGGI
         if is_alloggi_user:
             st.info("🏠 **Sei un utente residente negli Alloggi.** I posti parcheggio alloggiati vengono assegnati direttamente dall'Amministrazione. Non hai ancora un posto assegnato per questa data.")
 
-        # CASO STAFF
         elif gruppo_utente == "Staff":
             st.info("ℹ️ Come membro dello Staff puoi riservare un posto giornaliero o permanente.")
             posti_staff = POSTI_PER_ZONA["Staff"]
@@ -365,7 +381,6 @@ if not is_admin:
             else:
                 st.error("❌ Nessun Posto Staff libero per oggi (o posti riservati per evento).")
 
-        # CASO DOCENTI
         elif gruppo_utente == "Docenti":
             posti_doc = POSTI_PER_ZONA["Docenti"]
             posto_trovato = trova_posto_libero(posti_doc)
@@ -382,7 +397,6 @@ if not is_admin:
             else:
                 st.error("❌ Nessun Posto Docenti libero per oggi.")
 
-        # CASO STUDENTI (NON ALLOGGIATI)
         else:
             if gruppo_utente not in corsi_presenti_oggi:
                 st.error(f"❌ Il gruppo **{gruppo_utente}** non risulta presente/in lezione il giorno **{data_visiva}**.")
@@ -390,7 +404,6 @@ if not is_admin:
             
             max_quota = quote_dinamiche.get(gruppo_utente, 0)
             
-            # Conteggia solo prenotazioni effettuate da studenti dello stesso gruppo (esclusi alloggi)
             occupati_gruppo = 0
             for pr in prenotazioni_raw:
                 u_inf = pr.get("utenti") or {}
@@ -441,7 +454,8 @@ else:
         with colB:
             if posto_admin != "-- Seleziona --":
                 if posto_admin in posti_bloccati_eventi:
-                    st.warning(f"Il posto **{posto_admin}** è bloccato da un Evento ({posti_bloccati_eventi[posto_admin]['username']}).")
+                    info_p = posti_bloccati_eventi[posto_admin]
+                    st.warning(f"Il posto **{posto_admin}** è bloccato da un Evento ({info_p['username']}) - Riservato: `{info_p['targa']}`")
                 else:
                     pr_esistenti = [pr for pr in prenotazioni_raw if pr["posto_id"] == posto_admin]
                     if not pr_esistenti:
@@ -575,46 +589,64 @@ else:
             except Exception as ex:
                 st.error(f"Errore caricamento: {ex}")
 
-    # TAB 3: MODALITÀ EVENTI (CREAZIONE E BLOCCO PARCHEGGI)
+    # TAB 3: MODALITÀ EVENTI CON TESTI PER SINGOLO PARCHEGGIO
     with tab3:
         st.write("### 🎉 Modalità Eventi e Blocco Parcheggi")
-        st.info("Riserva intere zone o tutti i parcheggi per eventi speciali e associa nomi di partecipanti/ospiti.")
+        st.info("Riserva intere zone o tutti i parcheggi per eventi e inserisci per quali ospiti/persone sono riservati i singoli posti (visibili solo ad Admin e Staff).")
         
-        with st.form("form_crea_evento"):
-            col_e1, col_e2 = st.columns(2)
-            with col_e1:
-                data_evento = st.date_input("Data Evento:", value=data_scelta, min_value=oggi, key="dt_event")
-                nome_evento = st.text_input("Nome Evento:", placeholder="Es. Convegno Viticoltura / Open Day")
-            
-            with col_e2:
-                note_evento = st.text_area("Ospiti / Nomi Riservati (Opzionale):", placeholder="Es. Riservato Relatori: Mario Rossi, Giuseppe Verdi...")
-                blocchi_selezionati = st.multiselect(
-                    "Blocchi Parcheggio da Bloccare:",
-                    options=["TUTTI", "Bassa", "Alta", "Piazzale", "Staff", "Docenti", "Alloggi"],
-                    default=["TUTTI"]
-                )
-            
-            submit_evento = st.form_submit_button("Crea Evento e Blocca Parcheggi 🚫", use_container_width=True)
-            
-            if submit_evento:
-                if not nome_evento.strip():
-                    st.error("Inserisci un nome per l'evento.")
-                elif not blocchi_selezionati:
-                    st.error("Seleziona almeno un blocco di parcheggi da riservare.")
-                else:
-                    str_blocchi = "TUTTI" if "TUTTI" in blocchi_selezionati else ",".join(blocchi_selezionati)
-                    payload_ev = {
-                        "data": data_evento.strftime("%Y-%m-%d"),
-                        "nome_evento": nome_evento.strip(),
-                        "note": note_evento.strip(),
-                        "blocchi": str_blocchi
-                    }
-                    try:
-                        supabase.table("eventi").insert(payload_ev).execute()
-                        st.success(f"🎉 Evento '{nome_evento}' creato con successo per il {data_evento.strftime('%d/%m/%Y')}!")
-                        st.rerun()
-                    except Exception as ex_ev:
-                        st.error(f"⚠️ Errore salvataggio evento: verificare che la tabella 'eventi' sia stata creata in Supabase. Dettaglio: {ex_ev}")
+        col_e1, col_e2 = st.columns(2)
+        with col_e1:
+            data_evento = st.date_input("Data Evento:", value=data_scelta, min_value=oggi, key="dt_event")
+            nome_evento = st.text_input("Nome Evento:", placeholder="Es. Convegno Viticoltura / Open Day")
+        
+        with col_e2:
+            note_evento = st.text_area("Note Generali Evento:", placeholder="Es. Riservato Relatori / Ospiti Esterni")
+            blocchi_selezionati = st.multiselect(
+                "Blocchi Parcheggio da Bloccare:",
+                options=["TUTTI", "Bassa", "Alta", "Piazzale", "Staff", "Docenti", "Alloggi"],
+                default=["TUTTI"]
+            )
+
+        # Determina i posti interessati dai blocchi selezionati
+        posti_interessati = []
+        if "TUTTI" in blocchi_selezionati:
+            posti_interessati = list(POSTI.keys())
+        else:
+            for b in blocchi_selezionati:
+                if b in POSTI_PER_ZONA:
+                    posti_interessati.extend(POSTI_PER_ZONA[b])
+
+        dettagli_posti = {}
+        if posti_interessati:
+            with st.expander("✏️ Personalizza indicazione per singoli posti (Visibili solo ad Admin e Staff)"):
+                st.caption("Lascia vuoto il campo per mostrare l'indicazione generica dell'evento o 'Riservato Evento'.")
+                cols_ev = st.columns(3)
+                for idx, p_id in enumerate(posti_interessati):
+                    c_target = cols_ev[idx % 3]
+                    txt_p = c_target.text_input(f"Posto {p_id}:", key=f"inp_ev_{p_id}", placeholder="Es. Prof. Rossi")
+                    if txt_p.strip():
+                        dettagli_posti[p_id] = txt_p.strip()
+
+        if st.button("Crea Evento e Blocca Parcheggi 🚫", use_container_width=True):
+            if not nome_evento.strip():
+                st.error("Inserisci un nome per l'evento.")
+            elif not blocchi_selezionati:
+                st.error("Seleziona almeno un blocco di parcheggi da riservare.")
+            else:
+                str_blocchi = "TUTTI" if "TUTTI" in blocchi_selezionati else ",".join(blocchi_selezionati)
+                payload_ev = {
+                    "data": data_evento.strftime("%Y-%m-%d"),
+                    "nome_evento": nome_evento.strip(),
+                    "note": note_evento.strip(),
+                    "blocchi": str_blocchi,
+                    "dettagli_posti": json.dumps(dettagli_posti)
+                }
+                try:
+                    supabase.table("eventi").insert(payload_ev).execute()
+                    st.success(f"🎉 Evento '{nome_evento}' creato con successo per il {data_evento.strftime('%d/%m/%Y')}!")
+                    st.rerun()
+                except Exception as ex_ev:
+                    st.error(f"⚠️ Errore salvataggio evento: verificare che la colonna 'dettagli_posti' sia presente su Supabase. Dettaglio: {ex_ev}")
 
         st.divider()
         st.write("### 📋 Eventi Programmati")
@@ -631,6 +663,19 @@ else:
                         supabase.table("eventi").delete().eq("id", ev.get("id")).execute()
                         st.success("Evento eliminato!")
                         st.rerun()
+                    
+                    # Dettaglio indicazioni singoli posti per l'Admin
+                    det_p = ev.get("dettagli_posti") or {}
+                    if isinstance(det_p, str):
+                        try:
+                            det_p = json.loads(det_p)
+                        except Exception:
+                            det_p = {}
+                    if isinstance(det_p, dict) and det_p:
+                        with st.expander(f"🔍 Riserve per singoli posti ({len(det_p)} personalizzati)"):
+                            for pk, pv in det_p.items():
+                                st.write(f"- **{pk}**: {pv}")
+                    st.divider()
             else:
                 st.info("Nessun evento futuro programmato.")
         except Exception:

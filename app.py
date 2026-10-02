@@ -61,6 +61,16 @@ for lista in POSTI_PER_ZONA.values():
     for p in lista:
         POSTI[p] = {}
 
+# --- FUNZIONI UTILITY UTENTI ---
+def check_is_alloggi(u_dict):
+    """Verifica se un utente è alloggiato da vari campi possibili."""
+    if not isinstance(u_dict, dict):
+        return False
+    if u_dict.get("is_alloggi") or u_dict.get("alloggi"):
+        return True
+    grp = str(u_dict.get("gruppo", ""))
+    return grp.startswith("Alloggi")
+
 # --- FUNZIONI DI CALCOLO DINAMICO ---
 def get_corsi_presenti(data_obj):
     giorno_sett = data_obj.weekday()
@@ -85,13 +95,11 @@ def get_numero_studenti_per_gruppo():
     """Conteggia gli studenti escludendo chi risiede negli alloggi."""
     counts = {grp: 0 for grp in GRUPPI_STUDENTI.keys()}
     try:
-        res = supabase.table("utenti").select("gruppo, is_alloggi, alloggi").execute()
+        res = supabase.table("utenti").select("*").execute()
         if res.data:
             for u in res.data:
                 grp = u.get("gruppo")
-                # Se è un utente alloggiato, NON viene conteggiato per la quota posti auto
-                is_alloggi = u.get("is_alloggi", False) or u.get("alloggi", False) or (isinstance(grp, str) and grp.startswith("Alloggi"))
-                if not is_alloggi and grp in counts:
+                if not check_is_alloggi(u) and grp in counts:
                     counts[grp] += 1
     except Exception:
         pass
@@ -138,7 +146,7 @@ def get_posti_bloccati_evento(data_str):
         if isinstance(ev_blocchi, str):
             blocchi_list = [b.strip() for b in ev_blocchi.split(",")]
         else:
-            blocchi_list = ev_blocchi
+            blocchi_list = ev_blocchi if isinstance(ev_blocchi, list) else ["TUTTI"]
             
         for p_id in POSTI.keys():
             prefisso = p_id.split("-")[0]
@@ -168,28 +176,25 @@ if st.session_state["utente_autenticato"] is None:
         password_inserita = st.text_input("Password:", type="password")
         if st.form_submit_button("Accedi 🔓", use_container_width=True):
             if username_inserito and password_inserita:
-                risposta = supabase.table("utenti").select("id, username, targa, gruppo, is_alloggi, alloggi").eq("username", username_inserito).eq("password", password_inserita).execute()
-                if risposta.data:
-                    st.session_state["utente_autenticato"] = risposta.data[0]
-                    st.rerun()
-                else:
-                    st.error("❌ Credenziali errate.")
+                try:
+                    risposta = supabase.table("utenti").select("*").eq("username", username_inserito).eq("password", password_inserita).execute()
+                    if risposta.data:
+                        st.session_state["utente_autenticato"] = risposta.data[0]
+                        st.rerun()
+                    else:
+                        st.error("❌ Credenziali errate.")
+                except Exception as e_login:
+                    st.error(f"❌ Errore durante l'accesso al database: {e_login}")
             else:
                 st.warning("Compila entrambi i campi.")
     st.stop()
 
 utente_loggato = st.session_state["utente_autenticato"]
-username = utente_loggato["username"]
+username = utente_loggato.get("username", "")
 gruppo_utente = utente_loggato.get("gruppo", "Marketing 1")
 targa_utente = utente_loggato.get("targa", "")
 is_admin = (username.lower() == "admin")
-
-# Check se risiede in alloggi
-is_alloggi_user = bool(
-    utente_loggato.get("is_alloggi", False) 
-    or utente_loggato.get("alloggi", False) 
-    or (isinstance(gruppo_utente, str) and gruppo_utente.startswith("Alloggi"))
-)
+is_alloggi_user = check_is_alloggi(utente_loggato)
 
 # --- SIDEBAR DI CONTROLLO & GESTIONE ---
 st.sidebar.header("👤 Account")
@@ -233,21 +238,26 @@ except Exception:
 # --- 4. RECUPERO PRENOTAZIONI DAL DATABASE ---
 prenotazioni_raw = []
 try:
-    resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, turno, utenti(username, targa, gruppo, is_alloggi, alloggi)").in_("data", [data_str, DATA_PERMANENTE]).execute()
+    resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, turno, utenti(*)").in_("data", [data_str, DATA_PERMANENTE]).execute()
     if resp_p.data:
         prenotazioni_raw = resp_p.data
 except Exception:
-    pass
+    try:
+        resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, utenti(*)").in_("data", [data_str, DATA_PERMANENTE]).execute()
+        if resp_p.data:
+            prenotazioni_raw = resp_p.data
+    except Exception:
+        pass
 
 # --- 5. PREPARAZIONE DATI PER MAPPA CON EVENTI E PRIVACY STAFF ---
 posti_bloccati_eventi = get_posti_bloccati_evento(data_str)
 prenotazioni_visibili = {}
 
-# Prima inserisci i blocchi degli eventi
+# Inserisci blocchi eventi
 for p_id, info_ev in posti_bloccati_eventi.items():
     prenotazioni_visibili[p_id] = info_ev
 
-# Poi sovrascrivi con le prenotazioni reali del DB se presenti
+# Inserisci prenotazioni reali del DB se non sovrascritte da eventi
 for p in prenotazioni_raw:
     p_id = p.get("posto_id")
     if p_id and p_id not in posti_bloccati_eventi:
@@ -319,7 +329,7 @@ if not is_admin:
             dt_txt = "Permanente" if is_perm else data_visiva
             st.write(f"- **Posto {mp['posto_id']}** ({dt_txt})")
             
-            # Solo se non è alloggiato permette di cancellarla autonomamente
+            # Gli alloggiati vedono l'assegnazione ma la revoca spetta all'admin
             if not is_alloggi_user:
                 if st.button(f"Cancella Prenotazione {mp['posto_id']} ❌", key=f"del_{mp['id']}"):
                     supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
@@ -385,8 +395,7 @@ if not is_admin:
             for pr in prenotazioni_raw:
                 u_inf = pr.get("utenti") or {}
                 u_grp = u_inf.get("gruppo")
-                u_all = u_inf.get("is_alloggi", False) or u_inf.get("alloggi", False)
-                if u_grp == gruppo_utente and not u_all:
+                if u_grp == gruppo_utente and not check_is_alloggi(u_inf):
                     occupati_gruppo += 1
             
             st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti prenotati.")
@@ -460,14 +469,12 @@ else:
     with tab2:
         st.write("### 💼 Assegnazione Diretta Staff & Alloggiati")
         
-        # Recupera Utenti Staff e Alloggiati
         utenti_speciali = []
         try:
-            res_u = supabase.table("utenti").select("id, username, targa, gruppo, is_alloggi, alloggi").execute()
+            res_u = supabase.table("utenti").select("*").execute()
             if res_u.data:
                 for u in res_u.data:
-                    is_all = u.get("is_alloggi", False) or u.get("alloggi", False) or str(u.get("gruppo")).startswith("Alloggi")
-                    if u.get("gruppo") == "Staff" or is_all:
+                    if u.get("gruppo") == "Staff" or check_is_alloggi(u):
                         utenti_speciali.append(u)
         except Exception:
             pass
@@ -481,7 +488,7 @@ else:
                 membro_scelto = st.selectbox(
                     "Seleziona Utente (Staff / Alloggiato):",
                     options=utenti_speciali,
-                    format_func=lambda u: f"{u['username']} ({'Alloggi' if u.get('is_alloggi') or u.get('alloggi') else u['gruppo']}) - Targa: {u.get('targa', '-')}",
+                    format_func=lambda u: f"{u['username']} ({'Alloggi' if check_is_alloggi(u) else u.get('gruppo')}) - Targa: {u.get('targa', '-')}",
                     key="sb_staff_member"
                 )
                 
@@ -492,8 +499,7 @@ else:
                 )
                 
             with col_s2:
-                # Suggerisci posti in base all'utente
-                is_membro_alloggi = membro_scelto.get("is_alloggi") or membro_scelto.get("alloggi")
+                is_membro_alloggi = check_is_alloggi(membro_scelto)
                 posti_suggeriti = POSTI_PER_ZONA["Alloggi"] if is_membro_alloggi else POSTI_PER_ZONA["Staff"]
                 altri_posti = [p for p in POSTI.keys() if p not in posti_suggeriti]
                 
@@ -551,7 +557,7 @@ else:
             st.write("### 🗑️ Gestione e Revoca Assegnazioni Speciali")
             
             try:
-                res_all_s = supabase.table("prenotazioni").select("id, data, posto_id, utente_id, utenti(username, targa, gruppo)").execute()
+                res_all_s = supabase.table("prenotazioni").select("id, data, posto_id, utente_id, utenti(*)").execute()
                 if res_all_s.data:
                     for r in res_all_s.data:
                         u_i = r.get("utenti") or {}
@@ -608,7 +614,7 @@ else:
                         st.success(f"🎉 Evento '{nome_evento}' creato con successo per il {data_evento.strftime('%d/%m/%Y')}!")
                         st.rerun()
                     except Exception as ex_ev:
-                        st.error(f"Errore salvataggio evento su Supabase: {ex_ev}")
+                        st.error(f"⚠️ Errore salvataggio evento: verificare che la tabella 'eventi' sia stata creata in Supabase. Dettaglio: {ex_ev}")
 
         st.divider()
         st.write("### 📋 Eventi Programmati")
@@ -628,7 +634,7 @@ else:
             else:
                 st.info("Nessun evento futuro programmato.")
         except Exception:
-            st.info("Nessuna tabella 'eventi' trovata o nessun evento presente.")
+            st.info("Nessuna tabella 'eventi' trovata in Supabase o nessun evento presente.")
 
     # TAB 4: CALENDARIO PRESENZE CORSI
     with tab4:
@@ -693,7 +699,7 @@ else:
         st.divider()
         st.write("### 📋 Download Report Excel Completo")
         try:
-            risposta_t = supabase.table("prenotazioni").select("data, posto_id, utenti(username, targa, gruppo)").execute()
+            risposta_t = supabase.table("prenotazioni").select("data, posto_id, utenti(*)").execute()
             if risposta_t.data:
                 lista_excel = []
                 for item in risposta_t.data:

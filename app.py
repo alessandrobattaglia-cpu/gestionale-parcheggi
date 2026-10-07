@@ -6,6 +6,7 @@ import pandas as pd
 import io
 import json
 import base64
+import math
 import streamlit.components.v1 as components
 
 # --- 1. CONNESSIONE AL DATABASE ---
@@ -47,13 +48,14 @@ MAPPA_GIORNI_SETTIMANA = {
 TOTALE_POSTI_STUDENTI = 15 + 20 + 19  # 54 Posti (Bassa, Alta, Piazzale)
 DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse
 
+# REQUISITO 6: Aumentati 2 posti Alloggi (da 11 a 13) e 1 posto Staff (da 22 a 23)
 POSTI_PER_ZONA = {
     "Bassa": [f"Bassa-{i}" for i in range(1, 16)],
     "Alta": [f"Alta-{i}" for i in range(1, 21)],
     "Piazzale": [f"Piazzale-{i}" for i in range(1, 20)],
-    "Staff": [f"Staff-{i}" for i in range(1, 23)],
+    "Staff": [f"Staff-{i}" for i in range(1, 24)],     # 23 posti
     "Docenti": [f"Docenti-{i}" for i in range(1, 6)],
-    "Alloggi": [f"Alloggi-{i}" for i in range(1, 12)]
+    "Alloggi": [f"Alloggi-{i}" for i in range(1, 14)]   # 13 posti
 }
 
 POSTI = {}
@@ -106,22 +108,31 @@ def get_numero_studenti_per_gruppo():
     return counts
 
 def calcola_quote_posti(data_obj):
+    """
+    REQUISITO 2: Calcolo quote con limite carpooling (minimo 3 persone per auto).
+    Quota max per gruppo = ceil(studenti_presenti / 3)
+    """
     corsi_pres = get_corsi_presenti(data_obj)
     studenti_counts = get_numero_studenti_per_gruppo()
     totale_studenti_oggi = sum(studenti_counts.get(g, 0) for g in corsi_pres)
     
     quote = {}
-    if totale_studenti_oggi > 0:
-        for g in corsi_pres:
-            n_stud = studenti_counts.get(g, 0)
-            if n_stud > 0:
-                q = max(1, round((n_stud / totale_studenti_oggi) * TOTALE_POSTI_STUDENTI))
-                quote[g] = q
-            else:
-                quote[g] = 1
-    else:
-        quota_equa = max(1, TOTALE_POSTI_STUDENTI // len(corsi_pres)) if corsi_pres else 0
-        quote = {g: quota_equa for g in corsi_pres}
+    for g in corsi_pres:
+        n_stud = studenti_counts.get(g, 0)
+        if n_stud == 0:
+            quote[g] = 0
+            continue
+            
+        # Limite massimo auto basato su carpooling (minimo 3 per auto)
+        cap_carpooling = math.ceil(n_stud / 3)
+        
+        if totale_studenti_oggi > 0:
+            q_prop = max(1, round((n_stud / totale_studenti_oggi) * TOTALE_POSTI_STUDENTI))
+        else:
+            q_prop = max(1, TOTALE_POSTI_STUDENTI // len(corsi_pres))
+            
+        # La quota non può eccedere la capacità di carpooling
+        quote[g] = min(q_prop, cap_carpooling)
         
     return quote, corsi_pres, studenti_counts
 
@@ -143,7 +154,6 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
         ev_note = ev.get("note", "")
         ev_blocchi = ev.get("blocchi", "TUTTI")
         
-        # Recupera dettagli dei singoli posti
         ev_dettagli = ev.get("dettagli_posti") or {}
         if isinstance(ev_dettagli, str):
             try:
@@ -161,12 +171,10 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
         for p_id in POSTI.keys():
             prefisso = p_id.split("-")[0]
             if "TUTTI" in blocchi_list or prefisso in blocchi_list:
-                # Testo specifico per il posto, se specificato
                 testo_specifico = ev_dettagli.get(p_id, "").strip()
                 if not testo_specifico:
                     testo_specifico = ev_note if ev_note else "Riservato Evento"
 
-                # PRIVACY: Solo Admin e Staff vedono la nota specifica del singolo posto
                 targa_visibile = testo_specifico if is_staff_or_admin else "Riservato Evento"
 
                 bloccati[p_id] = {
@@ -211,18 +219,24 @@ utente_loggato = st.session_state["utente_autenticato"]
 username = utente_loggato.get("username", "")
 gruppo_utente = utente_loggato.get("gruppo", "Marketing 1")
 targa_utente = utente_loggato.get("targa", "")
+
+# REQUISITO 8: Gestione Account Segreteria
 is_admin = (username.lower() == "admin")
+is_segreteria = (username.lower() == "segreteria" or gruppo_utente.lower() == "segreteria")
+is_admin_or_segreteria = is_admin or is_segreteria
+is_staff_or_admin = is_admin_or_segreteria or (gruppo_utente == "Staff")
 is_alloggi_user = check_is_alloggi(utente_loggato)
-is_staff_or_admin = is_admin or (gruppo_utente == "Staff")
+is_student = (not is_admin_or_segreteria) and (gruppo_utente in GRUPPI_STUDENTI)
 
 # --- SIDEBAR DI CONTROLLO & GESTIONE ---
 st.sidebar.header("👤 Account")
 st.sidebar.write(f"Utente: **{username}**")
-st.sidebar.write(f"Corso/Gruppo: **{gruppo_utente}**")
+st.sidebar.write(f"Ruolo/Corso: **{gruppo_utente}**")
 if is_alloggi_user:
     st.sidebar.info("🏠 **Residente Alloggi**")
 st.sidebar.write(f"Targa: **{targa_utente if targa_utente else 'Non impostata'}**")
 
+# Modifica Targa
 with st.sidebar.expander("✏️ Modifica la tua Targa"):
     nuova_targa = st.text_input("Nuova Targa:", value=targa_utente, key="input_targa")
     if st.button("Salva Targa 💾", use_container_width=True):
@@ -232,12 +246,27 @@ with st.sidebar.expander("✏️ Modifica la tua Targa"):
             st.success("Targa aggiornata!")
             st.rerun()
 
+# REQUISITO 3: Cambio Password Utente
+with st.sidebar.expander("🔑 Modifica Password"):
+    old_pwd = st.text_input("Password Attuale:", type="password", key="pwd_old")
+    new_pwd = st.text_input("Nuova Password:", type="password", key="pwd_new")
+    conf_pwd = st.text_input("Conferma Password:", type="password", key="pwd_conf")
+    if st.button("Aggiorna Password 💾", use_container_width=True):
+        if old_pwd != utente_loggato.get("password"):
+            st.error("❌ La password attuale non è corretta.")
+        elif not new_pwd or new_pwd != conf_pwd:
+            st.error("❌ Le nuove password non coincidono o sono vuote.")
+        else:
+            supabase.table("utenti").update({"password": new_pwd}).eq("id", utente_loggato["id"]).execute()
+            st.session_state["utente_autenticato"]["password"] = new_pwd
+            st.success("🎉 Password aggiornata!")
+            st.rerun()
+
 st.sidebar.divider()
 st.sidebar.subheader("📅 Seleziona Giorno")
 oggi = date.today()
 
-# Finestra prenotazioni
-max_data = oggi + datetime.timedelta(days=14) if (not is_admin and not is_alloggi_user) else oggi + datetime.timedelta(days=365)
+max_data = oggi + datetime.timedelta(days=14) if (not is_admin_or_segreteria and not is_alloggi_user) else oggi + datetime.timedelta(days=365)
 
 data_scelta = st.sidebar.date_input("Data:", min_value=oggi, max_value=max_data, format="DD/MM/YYYY")
 data_str = data_scelta.strftime("%Y-%m-%d")
@@ -247,7 +276,7 @@ if st.sidebar.button("Log out ❌", use_container_width=True):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# Pulizia vecchi dati (3 giorni fa, escludendo permanenti)
+# Pulizia vecchi dati
 try:
     data_limite = oggi - datetime.timedelta(days=3)
     supabase.table("prenotazioni").delete().lt("data", data_limite.strftime("%Y-%m-%d")).neq("data", DATA_PERMANENTE).execute()
@@ -262,13 +291,13 @@ try:
         prenotazioni_raw = resp_p.data
 except Exception:
     try:
-        resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, utenti(*)").in_("data", [data_str, DATA_PERMANENTE]).execute()
+        resp_p = supabase.table("prenotazioni").select("id, posto_id, utente_id, data, turno, utenti!fk_prenotazioni_utenti(*)").in_("data", [data_str, DATA_PERMANENTE]).execute()
         if resp_p.data:
             prenotazioni_raw = resp_p.data
     except Exception:
         pass
 
-# --- 5. PREPARAZIONE DATI PER MAPPA CON EVENTI E PRIVACY STAFF ---
+# --- 5. PREPARAZIONE DATI PER MAPPA CON PRIVACY & REQUISITI STUDENTI ---
 posti_bloccati_eventi = get_posti_bloccati_evento(data_str, is_staff_or_admin=is_staff_or_admin)
 prenotazioni_visibili = {}
 
@@ -276,31 +305,59 @@ prenotazioni_visibili = {}
 for p_id, info_ev in posti_bloccati_eventi.items():
     prenotazioni_visibili[p_id] = info_ev
 
-# Inserisci prenotazioni reali del DB se non sovrascritte da eventi
+# Inserisci prenotazioni reali DB con filtro privacy
 for p in prenotazioni_raw:
     p_id = p.get("posto_id")
     if p_id and p_id not in posti_bloccati_eventi:
+        u_id = p.get("utente_id")
         info_u = p.get("utenti") or {}
+        u_grp = info_u.get("gruppo", "")
+        u_name = info_u.get("username", "Occupato")
+        is_own_booking = (u_id == utente_loggato.get("id"))
         
-        is_staff_spot = str(p_id).startswith("Staff") or info_u.get("gruppo") == "Staff"
+        is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
         
-        if is_staff_spot and not is_admin and gruppo_utente != "Staff":
+        # REQUISITO 4: Privacy per gli studenti (No targhe altrui, nomi solo del proprio corso)
+        if is_student and not is_own_booking:
+            targa_disp = "-"
+            if u_grp == gruppo_utente:
+                username_disp = u_name
+                gruppo_disp = u_grp
+            else:
+                username_disp = "Occupato"
+                gruppo_disp = "Altro Corso"
+        elif is_staff_spot and not is_staff_or_admin:
             username_disp = "Staff"
             targa_disp = "-"
             gruppo_disp = "Staff"
         else:
-            username_disp = info_u.get("username", "Occupato")
+            username_disp = u_name
             targa_disp = info_u.get("targa", "-")
-            gruppo_disp = info_u.get("gruppo", "")
+            gruppo_disp = u_grp
 
         prenotazioni_visibili[p_id] = {
             "id_prenotazione": p.get("id"),
-            "utente_id": p.get("utente_id"),
+            "utente_id": u_id,
             "username": username_disp,
             "targa": targa_disp,
             "gruppo": gruppo_disp,
             "turno": "TUTTO_IL_GIORNO"
         }
+
+# REQUISITO 4: Gli studenti vedono "Libero" SOLO sulle zone studenti (Bassa, Alta, Piazzale).
+# Le zone Staff, Docenti, Alloggi non libere/non dedicate vengono marcate come riservate per gli studenti.
+if is_student:
+    zone_non_studenti = POSTI_PER_ZONA["Staff"] + POSTI_PER_ZONA["Docenti"] + POSTI_PER_ZONA["Alloggi"]
+    for p_id in zone_non_studenti:
+        if p_id not in prenotazioni_visibili:
+            prenotazioni_visibili[p_id] = {
+                "id_prenotazione": None,
+                "utente_id": None,
+                "username": "Riservato Zona",
+                "targa": "-",
+                "gruppo": "RISERVATO",
+                "turno": "TUTTO_IL_GIORNO"
+            }
 
 # --- 6. MAPPA INTERATTIVA ---
 st.subheader(f"🗺️ Mappa Parcheggi - {data_visiva}")
@@ -338,7 +395,7 @@ def trova_posto_libero(prefisso_lista):
             return p
     return None
 
-if not is_admin:
+if not is_admin_or_segreteria:
     mie_prenotazioni = [p for p in prenotazioni_raw if p["utente_id"] == utente_loggato["id"]]
     
     if mie_prenotazioni:
@@ -359,27 +416,26 @@ if not is_admin:
         if is_alloggi_user:
             st.info("🏠 **Sei un utente residente negli Alloggi.** I posti parcheggio alloggiati vengono assegnati direttamente dall'Amministrazione. Non hai ancora un posto assegnato per questa data.")
 
-        elif gruppo_utente == "Staff":
-            st.info("ℹ️ Come membro dello Staff puoi riservare un posto giornaliero o permanente.")
+        elif gruppo_utente in ["Staff", "Segreteria"]:
+            st.info("ℹ️ Come membro dello Staff / Segreteria puoi riservare un posto giornaliero o permanente.")
             posti_staff = POSTI_PER_ZONA["Staff"]
             posto_trovato = trova_posto_libero(posti_staff)
             
-            tipo_staff = st.radio("Tipo Assegnazione Staff:", ["Giornaliera", "Permanente (Fissa)"])
+            tipo_staff = st.radio("Tipo Assegnazione:", ["Giornaliera", "Permanente (Fissa)"])
             
             if posto_trovato:
                 if st.button(f"Conferma Assegnazione Posto {posto_trovato} 🟢", use_container_width=True):
                     d_save = DATA_PERMANENTE if tipo_staff == "Permanente (Fissa)" else data_str
-                    data_insert = {
+                    supabase.table("prenotazioni").insert({
                         "utente_id": utente_loggato["id"],
                         "data": d_save,
                         "posto_id": posto_trovato,
                         "turno": "TUTTO_IL_GIORNO"
-                    }
-                    supabase.table("prenotazioni").insert(data_insert).execute()
+                    }).execute()
                     st.success(f"Posto {posto_trovato} riservato con successo!")
                     st.rerun()
             else:
-                st.error("❌ Nessun Posto Staff libero per oggi (o posti riservati per evento).")
+                st.error("❌ Nessun Posto Staff libero per oggi.")
 
         elif gruppo_utente == "Docenti":
             posti_doc = POSTI_PER_ZONA["Docenti"]
@@ -411,10 +467,10 @@ if not is_admin:
                 if u_grp == gruppo_utente and not check_is_alloggi(u_inf):
                     occupati_gruppo += 1
             
-            st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti prenotati.")
+            st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti auto (regola min 3 persone/auto).")
             
             if occupati_gruppo >= max_quota:
-                st.error(f"❌ Limite raggiunto! Il gruppo **{gruppo_utente}** ha esaurito la quota massima di **{max_quota}** posti per oggi.")
+                st.error(f"❌ Limite raggiunto! Il gruppo **{gruppo_utente}** ha esaurito la quota massima di **{max_quota}** auto per oggi.")
             else:
                 if st.button("Prenota Posto Auto Studenti 🚗", use_container_width=True):
                     posti_studenti = POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Alta"] + POSTI_PER_ZONA["Piazzale"]
@@ -432,10 +488,10 @@ if not is_admin:
                     else:
                         st.error("❌ Tutti i posti studenti sono occupati o bloccati per eventi.")
 
-# --- 8. PANNELLO AMMINISTRATORE ---
+# --- 8. PANNELLO AMMINISTRAZIONE & SEGRETERIA ---
 else:
     st.divider()
-    st.subheader("🛠 Pannello Amministrazione Parcheggi")
+    st.subheader("🛠 Pannello Amministrazione & Segreteria Parcheggi")
     
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📌 Gestione Posti", 
@@ -445,7 +501,7 @@ else:
         "📋 Report & Quote"
     ])
     
-    # TAB 1: GESTIONE INDIVIDUALE POSTI
+    # TAB 1: GESTIONE INDIVIDUALE POSTI & SPOSTAMENTI
     with tab1:
         colA, colB = st.columns(2)
         with colA:
@@ -479,6 +535,36 @@ else:
                             st.success("Prenotazione rimossa!")
                             st.rerun()
 
+        # REQUISITO 5: Spostare di posto le prenotazioni
+        st.divider()
+        st.write("### ↔️ Sposta una Prenotazione Esistente")
+        prenotazioni_spostabili = [pr for pr in prenotazioni_raw if pr.get("posto_id")]
+        if prenotazioni_spostabili:
+            col_mv1, col_mv2, col_mv3 = st.columns(3)
+            with col_mv1:
+                p_sposta = st.selectbox(
+                    "Seleziona Prenotazione da spostare:",
+                    options=prenotazioni_spostabili,
+                    format_func=lambda x: f"Posto {x['posto_id']} - {(x.get('utenti') or {}).get('username', 'Occupato')}",
+                    key="sb_mv_p"
+                )
+            with col_mv2:
+                posti_occupati_oggi = set(pr["posto_id"] for pr in prenotazioni_raw) | set(posti_bloccati_eventi.keys())
+                posti_liberi = [p for p in POSTI.keys() if p not in posti_occupati_oggi]
+                nuovo_posto_target = st.selectbox("Seleziona Nuovo Posto:", posti_liberi, key="sb_mv_target")
+            with col_mv3:
+                st.write("")
+                st.write("")
+                if st.button("Sposta Prenotazione 🔄", use_container_width=True):
+                    if nuovo_posto_target:
+                        supabase.table("prenotazioni").update({"posto_id": nuovo_posto_target}).eq("id", p_sposta["id"]).execute()
+                        st.success(f"Prenotazione spostata dal posto {p_sposta['posto_id']} al posto {nuovo_posto_target}!")
+                        st.rerun()
+                    else:
+                        st.error("Nessun posto libero disponibile.")
+        else:
+            st.info("Nessuna prenotazione attiva da spostare per questa data.")
+
     # TAB 2: ASSEGNAZIONE STAFF & ALLOGGI
     with tab2:
         st.write("### 💼 Assegnazione Diretta Staff & Alloggiati")
@@ -488,7 +574,7 @@ else:
             res_u = supabase.table("utenti").select("*").execute()
             if res_u.data:
                 for u in res_u.data:
-                    if u.get("gruppo") == "Staff" or check_is_alloggi(u):
+                    if u.get("gruppo") in ["Staff", "Segreteria"] or check_is_alloggi(u):
                         utenti_speciali.append(u)
         except Exception:
             pass
@@ -528,7 +614,7 @@ else:
                 st.info("📌 Il posto verrà riservato a tempo indeterminato (data speciale 2099-12-31).")
                 date_da_inserire.append(DATA_PERMANENTE)
                 
-            else: # Giorni Ricorrenti
+            else:
                 giorni_selezionati = st.multiselect(
                     "Giorni della settimana:",
                     options=["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"],
@@ -577,7 +663,7 @@ else:
                         u_i = r.get("utenti") or {}
                         dt_r = r.get("data")
                         p_r = r.get("posto_id")
-                        if str(p_r).startswith("Staff") or str(p_r).startswith("Alloggi") or u_i.get("gruppo") == "Staff":
+                        if str(p_r).startswith("Staff") or str(p_r).startswith("Alloggi") or u_i.get("gruppo") in ["Staff", "Segreteria"]:
                             col_r1, col_r2, col_r3, col_r4 = st.columns([3, 2, 2, 1])
                             col_r1.write(f"👤 **{u_i.get('username')}** ({u_i.get('targa', '-')})")
                             col_r2.write(f"🅿️ Posto: **{p_r}**")
@@ -589,7 +675,7 @@ else:
             except Exception as ex:
                 st.error(f"Errore caricamento: {ex}")
 
-    # TAB 3: MODALITÀ EVENTI CON TESTI PER SINGOLO PARCHEGGIO
+    # TAB 3: GESTIONE EVENTI E MODIFICA TESTI POSTI
     with tab3:
         st.write("### 🎉 Modalità Eventi e Blocco Parcheggi")
         st.info("Riserva intere zone o tutti i parcheggi per eventi e inserisci per quali ospiti/persone sono riservati i singoli posti (visibili solo ad Admin e Staff).")
@@ -607,7 +693,6 @@ else:
                 default=["TUTTI"]
             )
 
-        # Determina i posti interessati dai blocchi selezionati
         posti_interessati = []
         if "TUTTI" in blocchi_selezionati:
             posti_interessati = list(POSTI.keys())
@@ -646,7 +731,7 @@ else:
                     st.success(f"🎉 Evento '{nome_evento}' creato con successo per il {data_evento.strftime('%d/%m/%Y')}!")
                     st.rerun()
                 except Exception as ex_ev:
-                    st.error(f"⚠️ Errore salvataggio evento: verificare che la colonna 'dettagli_posti' sia presente su Supabase. Dettaglio: {ex_ev}")
+                    st.error(f"⚠️ Errore salvataggio evento: {ex_ev}")
 
         st.divider()
         st.write("### 📋 Eventi Programmati")
@@ -655,31 +740,61 @@ else:
             res_ev_all = supabase.table("eventi").select("*").gte("data", oggi.strftime("%Y-%m-%d")).order("data").execute()
             if res_ev_all.data:
                 for ev in res_ev_all.data:
+                    ev_id = ev.get("id")
                     col_ev1, col_ev2, col_ev3, col_ev4 = st.columns([2, 3, 3, 1])
                     col_ev1.write(f"📅 **{ev.get('data')}**")
                     col_ev2.write(f"🎉 **{ev.get('nome_evento')}**")
                     col_ev3.write(f"🚫 Blocchi: `{ev.get('blocchi')}` | Note: {ev.get('note', '-')}")
-                    if col_ev4.button("🗑️", key=f"del_ev_{ev.get('id')}"):
-                        supabase.table("eventi").delete().eq("id", ev.get("id")).execute()
+                    if col_ev4.button("🗑️", key=f"del_ev_{ev_id}"):
+                        supabase.table("eventi").delete().eq("id", ev_id).execute()
                         st.success("Evento eliminato!")
                         st.rerun()
                     
-                    # Dettaglio indicazioni singoli posti per l'Admin
-                    det_p = ev.get("dettagli_posti") or {}
-                    if isinstance(det_p, str):
-                        try:
-                            det_p = json.loads(det_p)
-                        except Exception:
-                            det_p = {}
-                    if isinstance(det_p, dict) and det_p:
-                        with st.expander(f"🔍 Riserve per singoli posti ({len(det_p)} personalizzati)"):
-                            for pk, pv in det_p.items():
-                                st.write(f"- **{pk}**: {pv}")
+                    # REQUISITO 1: Modifica testo posti e dettagli evento dopo la creazione
+                    with st.expander(f"✏️ Modifica Dettagli Evento: {ev.get('nome_evento')}"):
+                        with st.form(key=f"form_mod_ev_{ev_id}"):
+                            m_nome = st.text_input("Nome Evento:", value=ev.get("nome_evento", ""))
+                            m_note = st.text_area("Note Evento:", value=ev.get("note", ""))
+                            
+                            curr_b = ev.get("blocchi", "TUTTI")
+                            b_def = [b.strip() for b in curr_b.split(",")] if isinstance(curr_b, str) else (curr_b if isinstance(curr_b, list) else ["TUTTI"])
+                            m_blocchi = st.multiselect("Blocchi Parcheggio:", options=["TUTTI", "Bassa", "Alta", "Piazzale", "Staff", "Docenti", "Alloggi"], default=b_def)
+                            
+                            det_p_curr = ev.get("dettagli_posti") or {}
+                            if isinstance(det_p_curr, str):
+                                try:
+                                    det_p_curr = json.loads(det_p_curr)
+                                except Exception:
+                                    det_p_curr = {}
+                            elif not isinstance(det_p_curr, dict):
+                                det_p_curr = {}
+
+                            st.caption("Personalizza testo per singoli posti:")
+                            m_dettagli = {}
+                            imp_spots = list(POSTI.keys()) if "TUTTI" in m_blocchi else [p for b in m_blocchi if b in POSTI_PER_ZONA for p in POSTI_PER_ZONA[b]]
+                            
+                            cols_m = st.columns(2)
+                            for idx, p_k in enumerate(imp_spots):
+                                c_target = cols_m[idx % 2]
+                                val_input = c_target.text_input(f"Posto {p_k}:", value=det_p_curr.get(p_k, ""), key=f"inp_mod_{ev_id}_{p_k}")
+                                if val_input.strip():
+                                    m_dettagli[p_k] = val_input.strip()
+
+                            if st.form_submit_button("Salva Modifiche Evento 💾", use_container_width=True):
+                                str_m_blocchi = "TUTTI" if "TUTTI" in m_blocchi else ",".join(m_blocchi)
+                                supabase.table("eventi").update({
+                                    "nome_evento": m_nome.strip(),
+                                    "note": m_note.strip(),
+                                    "blocchi": str_m_blocchi,
+                                    "dettagli_posti": json.dumps(m_dettagli)
+                                }).eq("id", ev_id).execute()
+                                st.success("Evento aggiornato!")
+                                st.rerun()
                     st.divider()
             else:
                 st.info("Nessun evento futuro programmato.")
-        except Exception:
-            st.info("Nessuna tabella 'eventi' trovata in Supabase o nessun evento presente.")
+        except Exception as ex_ev_list:
+            st.info(f"Nessun evento caricato: {ex_ev_list}")
 
     # TAB 4: CALENDARIO PRESENZE CORSI
     with tab4:
@@ -728,50 +843,72 @@ else:
 
     # TAB 5: REPORT E QUOTE
     with tab5:
-        st.write("### 📊 Quote Posti Calcolate per Oggi (Esclusi Alloggiati)")
+        st.write("### 📊 Quote Posti Calcolate per Oggi (Regola Carpooling Applicata)")
         
         df_quote = pd.DataFrame([
             {
                 "Corso": grp,
                 "Stato Oggi": "PRESENTE 🟢" if grp in corsi_presenti_oggi else "ASSENTE 🔴",
                 "Iscritti Totali (No Alloggi)": numero_iscritti.get(grp, 0),
-                "Quota Posti Auto Assegnata": quote_dinamiche.get(grp, 0) if grp in corsi_presenti_oggi else 0
+                "Quota Max Posti Auto": quote_dinamiche.get(grp, 0) if grp in corsi_presenti_oggi else 0
             }
             for grp in GRUPPI_STUDENTI.keys()
         ])
         st.dataframe(df_quote, use_container_width=True)
         
+        # REQUISITO 7: Report Giornaliero e Completo
         st.divider()
-        st.write("### 📋 Download Report Excel Completo")
-        try:
-            risposta_t = supabase.table("prenotazioni").select("data, posto_id, utenti(*)").execute()
-            if risposta_t.data:
-                lista_excel = []
-                for item in risposta_t.data:
-                    u_info = item.get("utenti") or {}
-                    p_data_raw = str(item.get("data", ""))
-                    p_user = u_info.get("username", "Occupato")
+        st.write("### 📋 Download Report Excel")
+        
+        tipo_report = st.radio(
+            "Seleziona ambito report:",
+            ["Report Giornaliero (Data selezionata)", "Report Completo (Tutti i dati)"],
+            horizontal=True
+        )
+        
+        if st.button("Genera e Scarica Report Excel 📥", use_container_width=True):
+            try:
+                if tipo_report == "Report Giornaliero (Data selezionata)":
+                    try:
+                        risposta_t = supabase.table("prenotazioni").select("data, posto_id, utenti(*)").in_("data", [data_str, DATA_PERMANENTE]).execute()
+                    except Exception:
+                        risposta_t = supabase.table("prenotazioni").select("data, posto_id, utenti!fk_prenotazioni_utenti(*)").in_("data", [data_str, DATA_PERMANENTE]).execute()
+                else:
+                    try:
+                        risposta_t = supabase.table("prenotazioni").select("data, posto_id, utenti(*)").execute()
+                    except Exception:
+                        risposta_t = supabase.table("prenotazioni").select("data, posto_id, utenti!fk_prenotazioni_utenti(*)").execute()
+                
+                if risposta_t.data:
+                    lista_excel = []
+                    for item in risposta_t.data:
+                        u_info = item.get("utenti") or {}
+                        p_data_raw = str(item.get("data", ""))
+                        p_user = u_info.get("username", "Occupato")
+                        
+                        lista_excel.append({
+                            "Data": "PERMANENTE" if p_data_raw == DATA_PERMANENTE else p_data_raw,
+                            "Posto": item.get("posto_id"),
+                            "Utente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
+                            "Gruppo": u_info.get("gruppo", "-") if p_user.lower() != 'admin' else "-",
+                            "Targa": u_info.get("targa", "-") if p_user.lower() != 'admin' else "-"
+                        })
                     
-                    lista_excel.append({
-                        "Data": "PERMANENTE" if p_data_raw == DATA_PERMANENTE else p_data_raw,
-                        "Posto": item.get("posto_id"),
-                        "Utente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
-                        "Gruppo": u_info.get("gruppo", "-") if p_user.lower() != 'admin' else "-",
-                        "Targa": u_info.get("targa", "-") if p_user.lower() != 'admin' else "-"
-                    })
-                
-                df_excel = pd.DataFrame(lista_excel)
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df_excel.to_excel(writer, index=False, sheet_name='Prenotazioni')
-                buffer.seek(0)
-                
-                st.download_button(
-                    label="📥 Scarica Report Excel (.xlsx)",
-                    data=buffer,
-                    file_name=f"report_parcheggi_{date.today().strftime('%d_%m_%Y')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-        except Exception as ex_rep:
-            st.error(f"Errore creazione report: {ex_rep}")
+                    df_excel = pd.DataFrame(lista_excel)
+                    buffer = io.BytesIO()
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        df_excel.to_excel(writer, index=False, sheet_name='Prenotazioni')
+                    buffer.seek(0)
+                    
+                    file_suffix = f"giornaliero_{data_str}" if "Giornaliero" in tipo_report else "completo"
+                    st.download_button(
+                        label="⬇️ Clicca qui per scaricare il file Excel",
+                        data=buffer,
+                        file_name=f"report_parcheggi_{file_suffix}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                else:
+                    st.warning("Nessuna prenotazione trovata per il report selezionato.")
+            except Exception as ex_rep:
+                st.error(f"Errore creazione report: {ex_rep}")

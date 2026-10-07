@@ -48,7 +48,7 @@ MAPPA_GIORNI_SETTIMANA = {
 TOTALE_POSTI_STUDENTI = 15 + 20 + 19  # 54 Posti (Bassa, Alta, Piazzale)
 DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse
 
-# REQUISITO 6: Aumentati 2 posti Alloggi (da 11 a 13) e 1 posto Staff (da 22 a 23)
+# Posti per Zona (23 Staff e 13 Alloggi)
 POSTI_PER_ZONA = {
     "Bassa": [f"Bassa-{i}" for i in range(1, 16)],
     "Alta": [f"Alta-{i}" for i in range(1, 21)],
@@ -108,10 +108,7 @@ def get_numero_studenti_per_gruppo():
     return counts
 
 def calcola_quote_posti(data_obj):
-    """
-    REQUISITO 2: Calcolo quote con limite carpooling (minimo 3 persone per auto).
-    Quota max per gruppo = ceil(studenti_presenti / 3)
-    """
+    """Calcolo quote con limite carpooling (minimo 3 persone per auto)."""
     corsi_pres = get_corsi_presenti(data_obj)
     studenti_counts = get_numero_studenti_per_gruppo()
     totale_studenti_oggi = sum(studenti_counts.get(g, 0) for g in corsi_pres)
@@ -123,7 +120,6 @@ def calcola_quote_posti(data_obj):
             quote[g] = 0
             continue
             
-        # Limite massimo auto basato su carpooling (minimo 3 per auto)
         cap_carpooling = math.ceil(n_stud / 3)
         
         if totale_studenti_oggi > 0:
@@ -131,7 +127,6 @@ def calcola_quote_posti(data_obj):
         else:
             q_prop = max(1, TOTALE_POSTI_STUDENTI // len(corsi_pres))
             
-        # La quota non può eccedere la capacità di carpooling
         quote[g] = min(q_prop, cap_carpooling)
         
     return quote, corsi_pres, studenti_counts
@@ -215,17 +210,15 @@ if st.session_state["utente_autenticato"] is None:
                 st.warning("Compila entrambi i campi.")
     st.stop()
 
+# Recupero utente e gestione in sicurezza di valori None
 utente_loggato = st.session_state["utente_autenticato"]
-username = utente_loggato.get("username", "")
-gruppo_utente = utente_loggato.get("gruppo", "Marketing 1")
-targa_utente = utente_loggato.get("targa", "")
+username = str(utente_loggato.get("username") or "")
+gruppo_utente = str(utente_loggato.get("gruppo") or "Marketing 1")
+targa_utente = str(utente_loggato.get("targa") or "")
 
-# REQUISITO 8: Gestione Account Segreteria
+# Ruoli e Privilegi
 is_admin = (username.lower() == "admin")
-is_segreteria = (
-    str(username).lower() == "segreteria" or 
-    str(gruppo_utente).lower() == "segreteria"
-)
+is_segreteria = (username.lower() == "segreteria" or gruppo_utente.lower() == "segreteria")
 is_admin_or_segreteria = is_admin or is_segreteria
 is_staff_or_admin = is_admin_or_segreteria or (gruppo_utente == "Staff")
 is_alloggi_user = check_is_alloggi(utente_loggato)
@@ -249,7 +242,7 @@ with st.sidebar.expander("✏️ Modifica la tua Targa"):
             st.success("Targa aggiornata!")
             st.rerun()
 
-# REQUISITO 3: Cambio Password Utente
+# Cambio Password Utente
 with st.sidebar.expander("🔑 Modifica Password"):
     old_pwd = st.text_input("Password Attuale:", type="password", key="pwd_old")
     new_pwd = st.text_input("Nuova Password:", type="password", key="pwd_new")
@@ -279,7 +272,7 @@ if st.sidebar.button("Log out ❌", use_container_width=True):
     st.session_state["utente_autenticato"] = None
     st.rerun()
 
-# Pulizia vecchi dati
+# Pulizia automatica vecchi dati
 try:
     data_limite = oggi - datetime.timedelta(days=3)
     supabase.table("prenotazioni").delete().lt("data", data_limite.strftime("%Y-%m-%d")).neq("data", DATA_PERMANENTE).execute()
@@ -300,7 +293,7 @@ except Exception:
     except Exception:
         pass
 
-# --- 5. PREPARAZIONE DATI PER MAPPA CON PRIVACY & REQUISITI STUDENTI ---
+# --- 5. PREPARAZIONE DATI PER MAPPA CON PRIVACY ---
 posti_bloccati_eventi = get_posti_bloccati_evento(data_str, is_staff_or_admin=is_staff_or_admin)
 prenotazioni_visibili = {}
 
@@ -308,7 +301,7 @@ prenotazioni_visibili = {}
 for p_id, info_ev in posti_bloccati_eventi.items():
     prenotazioni_visibili[p_id] = info_ev
 
-# Inserisci prenotazioni reali DB con filtro privacy
+# Inserisci prenotazioni reali DB con filtri di privacy
 for p in prenotazioni_raw:
     p_id = p.get("posto_id")
     if p_id and p_id not in posti_bloccati_eventi:
@@ -320,7 +313,7 @@ for p in prenotazioni_raw:
         
         is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
         
-        # REQUISITO 4: Privacy per gli studenti (No targhe altrui, nomi solo del proprio corso)
+        # Privacy Studenti: No targhe altrui, nomi solo del proprio corso
         if is_student and not is_own_booking:
             targa_disp = "-"
             if u_grp == gruppo_utente:
@@ -347,8 +340,7 @@ for p in prenotazioni_raw:
             "turno": "TUTTO_IL_GIORNO"
         }
 
-# REQUISITO 4: Gli studenti vedono "Libero" SOLO sulle zone studenti (Bassa, Alta, Piazzale).
-# Le zone Staff, Docenti, Alloggi non libere/non dedicate vengono marcate come riservate per gli studenti.
+# Gli studenti vedono "Riservato" sulle zone non-studenti
 if is_student:
     zone_non_studenti = POSTI_PER_ZONA["Staff"] + POSTI_PER_ZONA["Docenti"] + POSTI_PER_ZONA["Alloggi"]
     for p_id in zone_non_studenti:
@@ -538,7 +530,6 @@ else:
                             st.success("Prenotazione rimossa!")
                             st.rerun()
 
-        # REQUISITO 5: Spostare di posto le prenotazioni
         st.divider()
         st.write("### ↔️ Sposta una Prenotazione Esistente")
         prenotazioni_spostabili = [pr for pr in prenotazioni_raw if pr.get("posto_id")]
@@ -753,7 +744,7 @@ else:
                         st.success("Evento eliminato!")
                         st.rerun()
                     
-                    # REQUISITO 1: Modifica testo posti e dettagli evento dopo la creazione
+                    # Modifica testo posti e dettagli evento dopo la creazione
                     with st.expander(f"✏️ Modifica Dettagli Evento: {ev.get('nome_evento')}"):
                         with st.form(key=f"form_mod_ev_{ev_id}"):
                             m_nome = st.text_input("Nome Evento:", value=ev.get("nome_evento", ""))
@@ -859,7 +850,6 @@ else:
         ])
         st.dataframe(df_quote, use_container_width=True)
         
-        # REQUISITO 7: Report Giornaliero e Completo
         st.divider()
         st.write("### 📋 Download Report Excel")
         

@@ -222,7 +222,10 @@ targa_utente = utente_loggato.get("targa", "")
 
 # REQUISITO 8: Gestione Account Segreteria
 is_admin = (username.lower() == "admin")
-is_segreteria = (username.lower() == "segreteria" or gruppo_utente.lower() == "segreteria")
+is_segreteria = (
+    str(username).lower() == "segreteria" or 
+    str(gruppo_utente).lower() == "segreteria"
+)
 is_admin_or_segreteria = is_admin or is_segreteria
 is_staff_or_admin = is_admin_or_segreteria or (gruppo_utente == "Staff")
 is_alloggi_user = check_is_alloggi(utente_loggato)

@@ -122,7 +122,7 @@ def is_booking_open_for_student(data_target, now_dt=None):
     target_monday = data_target - datetime.timedelta(days=data_target.weekday())
     
     # Orario apertura: Venerdì precedente alle 18:00
-    opening_dt = dt.combine(target_monday - datetime.timedelta(days=3), time(18, 0))
+    opening_dt = dt.combine(target_monday - datetime.timedelta(days=5), time(18, 0))
     
     if now_dt >= opening_dt:
         return True, opening_dt

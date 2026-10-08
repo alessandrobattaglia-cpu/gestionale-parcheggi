@@ -64,20 +64,21 @@
     }
     
     /* Colori Base Zone quando LIBERI */
-    .zone-verde     { fill: #2ecc71; } /* VERDE CHIARO: Studenti (Bassa, Alta, Piazzale) */
+    .zone-verde     { fill: #2ecc71; } /* VERDE CHIARO: Studenti */
     .zone-staff     { fill: #3498db; } /* AZZURRO: Staff */
     .zone-docenti   { fill: #f39c12; } /* GIALLO/ORO: Docenti */
     .zone-alloggi   { fill: #1e8449; } /* VERDE SCURO: Alloggi */
     
     /* Stati speciali */
-    .occupied  { fill: #e74c3c !important; opacity: 0.95; }  /* ROSSO - Occupato */
-    .blocked   { fill: #7f8c8d !important; opacity: 0.95; }  /* GRIGIO - Bloccato / Riservato Zona */
-    .event-spot { fill: #9b59b6 !important; opacity: 0.95; } /* VIOLA - Eventi */
+    .occupied             { fill: #e74c3c !important; opacity: 0.95; }  /* ROSSO - Occupato */
+    .blocked              { fill: #7f8c8d !important; opacity: 0.95; }  /* GRIGIO - Bloccato / Riservato Zona */
+    .event-spot           { fill: #9b59b6 !important; opacity: 0.95; }  /* VIOLA - Eventi (Staff/Admin) */
+    .event-spot-student   { fill: #78281f !important; opacity: 0.95; stroke: #4a1510; } /* REQUISITO 1: ROSSO SCURO per Studenti */
 
-    /* REQUISITO 6: Mantieni colore Alloggi per posti assegnati ad Alloggi */
+    /* Mantieni colore Alloggi per posti assegnati ad Alloggi */
     .zone-alloggi-assigned { fill: #1e8449 !important; opacity: 0.95; stroke: #0e4b28; stroke-width: 2; }
 
-    /* REQUISITO 2: Posto dell'utente evidenziato in GIALLO */
+    /* Posto dell'utente evidenziato in GIALLO */
     rect.spot.my-spot {
       fill: #ffeb3b !important;
       stroke: #d32f2f !important;
@@ -90,7 +91,7 @@
       100% { fill: #fff176; filter: drop-shadow(0px 0px 8px #fbc02d); }
     }
 
-    /* REQUISITO 2: Fumetto 'IL TUO POSTO È QUI!' */
+    /* Fumetto 'IL TUO POSTO È QUI!' */
     .user-callout-badge {
       position: absolute;
       background: #fbc02d;
@@ -206,13 +207,13 @@
         <rect class="spot zone-verde" x="545" y="575" width="18" height="18" data-id="Piazzale-8" />
         <rect class="spot zone-verde" x="530" y="575" width="18" height="18" data-id="Piazzale-9" />
         <rect class="spot zone-verde" x="515" y="575" width="18" height="18" data-id="Piazzale-10" />
-        <rect class="spot zone-verde" x="415" y="530" width="18" height="18" data-id="Piazzale-11" />
-        <rect class="spot zone-verde" x="415" y="545" width="18" height="18" data-id="Piazzale-12" />
-        <rect class="spot zone-verde" x="415" y="560" width="18" height="18" data-id="Piazzale-13" />
-        <rect class="spot zone-verde" x="415" y="575" width="18" height="18" data-id="Piazzale-14" />
-        <rect class="spot zone-verde" x="415" y="590" width="18" height="18" data-id="Piazzale-15" />
-        <rect class="spot zone-verde" x="415" y="605" width="18" height="18" data-id="Piazzale-16" />
-        <rect class="spot zone-verde" x="415" y="620" width="18" height="18" data-id="Piazzale-17" />
+        <rect class="spot zone-verde" x="415" y="500" width="18" height="18" data-id="Piazzale-11" />
+        <rect class="spot zone-verde" x="415" y="515" width="18" height="18" data-id="Piazzale-12" />
+        <rect class="spot zone-verde" x="415" y="530" width="18" height="18" data-id="Piazzale-13" />
+        <rect class="spot zone-verde" x="415" y="545" width="18" height="18" data-id="Piazzale-14" />
+        <rect class="spot zone-verde" x="415" y="560" width="18" height="18" data-id="Piazzale-15" />
+        <rect class="spot zone-verde" x="415" y="575" width="18" height="18" data-id="Piazzale-16" />
+        <rect class="spot zone-verde" x="415" y="590" width="18" height="18" data-id="Piazzale-17" />
       </g>
 
       <!-- 4. ZONA STAFF - Azzurro (23 Posti) -->
@@ -242,15 +243,15 @@
         <rect class="spot zone-staff" x="835" y="70" width="18" height="18" data-id="Staff-23" />
       </g>
 
-      <!-- 5. ZONA DOCENTI - Giallo/Oro (7 Posti - REQUISITO 1: +2 Posti da Piazzale) -->
+      <!-- 5. ZONA DOCENTI - Giallo/Oro (7 Posti) -->
       <g id="zona-docenti">
         <rect class="spot zone-docenti" x="415" y="390" width="18" height="18" data-id="Docenti-1" />
         <rect class="spot zone-docenti" x="415" y="405" width="18" height="18" data-id="Docenti-2" />
         <rect class="spot zone-docenti" x="415" y="420" width="18" height="18" data-id="Docenti-3" />
         <rect class="spot zone-docenti" x="415" y="435" width="18" height="18" data-id="Docenti-4" />
         <rect class="spot zone-docenti" x="415" y="450" width="18" height="18" data-id="Docenti-5" />
-        <rect class="spot zone-docenti" x="415" y="500" width="18" height="18" data-id="Docenti-6" />
-        <rect class="spot zone-docenti" x="415" y="515" width="18" height="18" data-id="Docenti-7" />
+        <rect class="spot zone-docenti" x="415" y="605" width="18" height="18" data-id="Docenti-6" />
+        <rect class="spot zone-docenti" x="415" y="620" width="18" height="18" data-id="Docenti-7" />
       </g>
 
       <!-- 6. ZONA ALLOGGI - Verde Scuro (13 Posti) -->
@@ -275,6 +276,7 @@
 
   <script>
     const prenotazioniDB = ST_PRENOTAZIONI_JSON_PLACEHOLDER;
+    const isStudentView = ST_IS_STUDENT_VIEW_PLACEHOLDER;
     const tooltip = document.getElementById("tooltip");
 
     document.querySelectorAll('.spot').forEach(spot => {
@@ -285,18 +287,20 @@
         const uName = (info.username || "").toLowerCase();
         const uGrp = info.gruppo || "";
 
-        // REQUISITO 2: Se è il posto dell'utente loggato, evidenzialo in GIALLO
         if (info.is_mine) {
           spot.classList.add('my-spot');
         } 
-        else if (uGrp === "EVENTO" || info.username.startsWith("🎉")) {
-          spot.classList.add('event-spot');
+        // REQUISITO 1: Posti evento in ROSSO SCURO per studenti, VIOLA per Admin/Staff
+        else if (uGrp === "EVENTO" || info.username.startsWith("🎉") || info.is_event) {
+          if (isStudentView) {
+            spot.classList.add('event-spot-student');
+          } else {
+            spot.classList.add('event-spot');
+          }
         } 
-        // REQUISITO 3: Posti Riservati / No-Studenti sempre in Grigio (blocked)
         else if (uName === 'admin' || uGrp === 'RISERVATO' || info.username === 'Riservato Zona') {
           spot.classList.add('blocked');
         } 
-        // REQUISITO 6: Posti Alloggi assegnati ad Alloggiati mantengono il colore Alloggi
         else if (info.is_alloggi || uGrp.startsWith("Alloggi")) {
           spot.classList.add('zone-alloggi-assigned');
         } 
@@ -312,7 +316,8 @@
           const uGrp = info.gruppo || "";
 
           if (info.is_mine) {
-            text += `📍 IL TUO POSTO PRENOTATO!\n👤 ${uName}\n🏎️ Targa: ${info.targa}`;
+            text += `📍 IL TUO POSTO PRENOTATO!\n👤 Conducente: ${uName}`;
+            if (info.targa && info.targa !== '-') text += `\n🏎️ Targa: ${info.targa}`;
           } else if (uName.toLowerCase() === 'admin') {
             text += `⛔ STATO: NON DISPONIBILE`;
           } else if (uName === 'Riservato Zona' || uGrp === 'RISERVATO') {
@@ -326,9 +331,8 @@
             }
           }
 
-          // REQUISITO 5: Mostra passeggeri nel tooltip
-          if (info.passeggeri) {
-            text += `\n👥 In auto con: ${info.passeggeri}`;
+          if (info.passeggeri && info.passeggeri !== '-') {
+            text += `\n👥 Passeggeri in auto: ${info.passeggeri}`;
           }
         } else {
           text += `✅ STATO: LIBERO`;
@@ -345,7 +349,7 @@
       });
     });
 
-    // REQUISITO 2: Posiziona il Fumetto 'IL TUO POSTO È QUI!' sopra il posto giallo
+    // Posiziona il Fumetto 'IL TUO POSTO È QUI!' sopra il posto giallo
     const mySpotElem = document.querySelector('.spot.my-spot');
     if (mySpotElem) {
       const mapContainer = document.getElementById('map-container');

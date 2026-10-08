@@ -46,7 +46,7 @@ MAPPA_GIORNI_SETTIMANA = {
     "Domenica": 6
 }
 
-# REQUISITO 1: Piazzale diventa 17 posti, Docenti diventa 7 posti.
+# Posti per zona (Piazzale: 17 posti, Docenti: 7 posti)
 TOTALE_POSTI_STUDENTI = 15 + 20 + 17  # 52 Posti Studenti (Bassa, Alta, Piazzale)
 DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse
 
@@ -66,7 +66,7 @@ for lista in POSTI_PER_ZONA.values():
 
 # --- FUNZIONI UTILITY ---
 def is_valid_targa_italiana(targa_str):
-    """REQUISITO 4: Verifica il formato targa italiano (2 lettere, 3 numeri, 2 lettere)."""
+    """Verifica il formato targa italiano (2 lettere, 3 numeri, 2 lettere)."""
     if not targa_str:
         return False
     pattern = r"^[A-Z]{2}\d{3}[A-Z]{2}$"
@@ -187,35 +187,51 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
                 }
     return bloccati
 
-# REQUISITO 7: Risoluzione concorrenza per prenotazioni simultanee
+# --- FUNZIONE DI PRENOTAZIONE ATOMICA E SICURA CONTRO CONCORRENZA ---
 def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_turno):
     """
-    Controllo istantaneo in tempo reale del DB prima di inserire.
-    Evita conflitti se due utenti cliccano insieme.
+    Risoluzione definitiva della concorrenza:
+    Tenta l'inserimento nel DB. Se il posto è già stato preso da un altro utente
+    nello stesso istante, PostgreSQL rifiuta l'INSERT (vincolo UNIQUE) e il codice
+    passa automaticamente al posto successivo libero.
     """
+    # 1. Verifica preventiva se l'utente ha già una prenotazione per questa data
+    try:
+        check_u = supabase.table("prenotazioni").select("id").eq("data", data_target).eq("utente_id", utente_id).execute()
+        if check_u.data:
+            return False, "HAI_GIA_PRENOTATO"
+    except Exception:
+        pass
+
+    # 2. Recupera i posti attualmente occupati
     try:
         res_current = supabase.table("prenotazioni").select("posto_id").eq("data", data_target).execute()
         occupati_ora = set(r["posto_id"] for r in res_current.data) if res_current.data else set()
     except Exception:
         occupati_ora = set()
 
+    # 3. Cicla sui posti candidati e tenta l'inserimento
     for p_cand in lista_candidati:
         if p_cand in occupati_ora:
-            continue  # Posto appena preso da altro utente, salta
+            continue
         
         try:
-            # Tenta inserimento
-            supabase.table("prenotazioni").insert({
+            # L'INSERT fallirà a livello DB se un altro utente ha occupato p_cand un millisecondo prima
+            res_ins = supabase.table("prenotazioni").insert({
                 "utente_id": utente_id,
                 "data": data_target,
                 "posto_id": p_cand,
                 "turno": testo_turno
             }).execute()
-            return True, p_cand
-        except Exception:
-            continue  # Se fallisce per vincolo di duplicato, tenta col prossimo
             
-    return False, None
+            if res_ins.data:
+                return True, p_cand
+        except Exception:
+            # Se l'inserimento fallisce per conflitto di concorrenza, aggiunge il posto agli occupati e prova il successivo
+            occupati_ora.add(p_cand)
+            continue
+            
+    return False, "NESSUN_POSTO_LIBERO"
 
 # --- 2. CONFIGURAZIONE INTERFACCIA ---
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
@@ -264,7 +280,7 @@ st.sidebar.write(f"Ruolo/Corso: **{gruppo_utente}**")
 if is_alloggi_user:
     st.sidebar.info("🏠 **Residente Alloggi**")
 
-# REQUISITO 4: Controllo Validità Targa Italiana
+# Controllo Validità Targa Italiana
 targa_valida = is_valid_targa_italiana(targa_utente)
 if targa_valida:
     st.sidebar.success(f"Targa: **{targa_utente}** 🟢")
@@ -346,7 +362,6 @@ for p in prenotazioni_raw:
         u_grp = info_u.get("gruppo", "")
         u_name = info_u.get("username", "Occupato")
         
-        # REQUISITO 2: Identifica se la prenotazione è dell'utente loggato
         is_own_booking = (u_id == utente_loggato.get("id"))
         is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
         is_alloggi_spot = str(p_id).startswith("Alloggi") or check_is_alloggi(info_u)
@@ -357,7 +372,7 @@ for p in prenotazioni_raw:
         if "| Con:" in turno_val:
             txt_pass = turno_val.split("| Con:")[1].strip()
 
-        # REQUISITO 3: Privacy Studenti
+        # Privacy Studenti
         if is_student and not is_own_booking:
             targa_disp = "-"
             if u_grp == gruppo_utente:
@@ -382,12 +397,12 @@ for p in prenotazioni_raw:
             "targa": targa_disp,
             "gruppo": gruppo_disp,
             "turno": "TUTTO_IL_GIORNO",
-            "is_mine": is_own_booking,                     # REQUISITO 2: Evidenzia posto
-            "is_alloggi": is_alloggi_spot,                 # REQUISITO 6: Colore Alloggi
-            "passeggeri": txt_pass                         # REQUISITO 5: Passeggeri
+            "is_mine": is_own_booking,
+            "is_alloggi": is_alloggi_spot,
+            "passeggeri": txt_pass
         }
 
-# REQUISITO 3: Gli studenti vedono le zone no-studenti SEMPRE come "Riservato Zona" (Grigio)
+# Gli studenti vedono le zone no-studenti SEMPRE come "Riservato Zona" (Grigio)
 if is_student:
     zone_non_studenti = POSTI_PER_ZONA["Staff"] + POSTI_PER_ZONA["Docenti"] + POSTI_PER_ZONA["Alloggi"]
     for p_id in zone_non_studenti:
@@ -457,7 +472,7 @@ if not is_admin_or_segreteria:
     else:
         st.subheader("📌 Prenota il tuo Posto Auto")
 
-        # REQUISITO 4: Controllo Targa Obbligatoria prima di mostrare i form
+        # Controllo Targa Obbligatoria prima di mostrare i form
         if not targa_valida:
             st.error("⚠️ **TARGA NON IMPOSTATA O NON VALIDA!**")
             st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
@@ -472,12 +487,14 @@ if not is_admin_or_segreteria:
             tipo_staff = st.radio("Tipo Assegnazione:", ["Giornaliera", "Permanente (Fissa)"])
             
             if candidati_staff:
-                if st.button(f"Conferma Assegnazione Posto ({candidati_staff[0]}) 🟢", use_container_width=True):
+                if st.button(f"Conferma Assegnazione Posto Staff 🟢", use_container_width=True):
                     d_save = DATA_PERMANENTE if tipo_staff == "Permanente (Fissa)" else data_str
-                    ok, p_assegnato = prenotazione_atomica_sicura(utente_loggato["id"], d_save, candidati_staff, "TUTTO_IL_GIORNO")
+                    ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], d_save, candidati_staff, "TUTTO_IL_GIORNO")
                     if ok:
-                        st.success(f"Posto **{p_assegnato}** riservato con successo!")
+                        st.success(f"Posto **{esito}** riservato con successo!")
                         st.rerun()
+                    elif esito == "HAI_GIA_PRENOTATO":
+                        st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
                     else:
                         st.error("❌ I posti liberi sono stati appena occupati. Riprova.")
             else:
@@ -486,11 +503,13 @@ if not is_admin_or_segreteria:
         elif gruppo_utente == "Docenti":
             candidati_doc = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Docenti"])
             if candidati_doc:
-                if st.button(f"Prenota Posto Docenti ({candidati_doc[0]}) 🟢", use_container_width=True):
-                    ok, p_assegnato = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_doc, "TUTTO_IL_GIORNO")
+                if st.button(f"Prenota Posto Docenti 🟢", use_container_width=True):
+                    ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_doc, "TUTTO_IL_GIORNO")
                     if ok:
-                        st.success(f"Posto **{p_assegnato}** prenotato con successo!")
+                        st.success(f"Posto **{esito}** prenotato con successo!")
                         st.rerun()
+                    elif esito == "HAI_GIA_PRENOTATO":
+                        st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
                     else:
                         st.error("❌ Nessun posto libero disponibile. Riprova.")
             else:
@@ -512,7 +531,7 @@ if not is_admin_or_segreteria:
             
             st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti auto (regola min 3 persone/auto).")
             
-            # REQUISITO 5: Inserimento Passeggeri
+            # Inserimento Passeggeri
             passeggeri_input = st.text_input("👥 Con chi sei in auto? (Passeggeri/Note opzionali):", placeholder="Es. Mario Rossi, Luca Bianchi")
 
             if occupati_gruppo >= max_quota:
@@ -524,14 +543,16 @@ if not is_admin_or_segreteria:
                     if candidati_studenti:
                         txt_turno = f"TUTTO_IL_GIORNO | Con: {passeggeri_input.strip()}" if passeggeri_input.strip() else "TUTTO_IL_GIORNO"
                         
-                        # REQUISITO 7: Esecuzione atomica sicura contro doppie prenotazioni
-                        ok, p_assegnato = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_studenti, txt_turno)
+                        # Esecuzione prenotazione atomica sicura
+                        ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_studenti, txt_turno)
                         
                         if ok:
-                            st.success(f"🎉 Ti è stato assegnato il **Posto {p_assegnato}**!")
+                            st.success(f"🎉 Ti è stato assegnato il **Posto {esito}**!")
                             st.rerun()
+                        elif esito == "HAI_GIA_PRENOTATO":
+                            st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
                         else:
-                            st.error("❌ Tutti i posti disponibili sono stati appena prenotati da altri utenti. Riprova.")
+                            st.error("❌ I posti liberi sono stati appena occupati da altri utenti. Riprova.")
                     else:
                         st.error("❌ Tutti i posti studenti sono occupati o bloccati per eventi.")
 

@@ -600,7 +600,7 @@ if not is_admin_or_segreteria:
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             
             selected_passengers = st.multiselect(
-                "👥 Seleziona chi è in auto con te (OBBLIGATORIO - Almeno 1 passeggero):",
+                "👥 Seleziona chi è in auto con te (OBBLIGATORIO):",
                 options=studenti_disponibili,
                 format_func=lambda u: f"{u['username']} ({u['gruppo']})",
                 key="ms_passengers_select"

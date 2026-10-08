@@ -113,7 +113,7 @@ def get_lista_studenti(current_user_id):
         pass
     return []
 
-# REQUISITO 4: Regola apertura venerdì ore 18:00
+# Regola apertura venerdì ore 18:00
 def is_booking_open_for_student(data_target, now_dt=None):
     if now_dt is None:
         now_dt = dt.now()
@@ -411,7 +411,7 @@ for p in prenotazioni_raw:
         is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
         is_alloggi_spot = str(p_id).startswith("Alloggi") or check_is_alloggi(info_u)
 
-        # REQUISITO 3: Privacy Studenti
+        # Privacy Studenti
         if is_student:
             if is_my_car:
                 username_disp = u_name
@@ -461,11 +461,11 @@ if is_student:
         }
 
 # --- 6. MAPPA INTERATTIVA ---
-# REQUISITO 1: Avviso Evento in questa data
+# Avviso Evento in questa data (Banner Rosso Scuro)
 eventi_oggi = get_eventi_giorno(data_str)
 if eventi_oggi:
     nomi_ev = ", ".join([e.get("nome_evento", "Evento") for e in eventi_oggi])
-    st.warning(f"⚠️ **ATTENZIONE: Evento programmato in data {data_visiva}! ({nomi_ev})**\nI posti riservati all'evento sono bloccati ed evidenziati sulla mappa.")
+    st.error(f"🚨 **ATTENZIONE: EVENTO PROGRAMMATO IN DATA {data_visiva}! ({nomi_ev})**\nI posti riservati all'evento sono bloccati ed evidenziati in rosso scuro sulla mappa.")
 
 st.subheader(f"🗺️ Mappa Parcheggi - {data_visiva}")
 
@@ -521,7 +521,7 @@ if not is_admin_or_segreteria:
                     st.success("Prenotazione annullata!")
                     st.rerun()
 
-    # REQUISITO 2: Se l'utente è registrato come passeggero, gli si mostra l'avviso e si blocca la prenotazione
+    # Se l'utente è registrato come passeggero, mostra l'avviso e blocca la prenotazione
     elif is_passenger_check:
         st.info(f"🚗 **Sei registrato come passeggero** nell'auto di **{driver_name_check}** (Posto **{p_assigned_check}**) per il giorno **{data_visiva}**.")
         st.caption("Risultando già presente come passeggero, non puoi effettuare un'ulteriore prenotazione come conducente.")
@@ -529,7 +529,7 @@ if not is_admin_or_segreteria:
     else:
         st.subheader("📌 Prenota il tuo Posto Auto")
 
-        # REQUISITO 4: Controllo Apertura Prenotazioni Venerdì Ore 18:00
+        # Controllo Apertura Prenotazioni Venerdì Ore 18:00
         if is_student:
             is_open, open_datetime = is_booking_open_for_student(data_scelta)
             if not is_open:
@@ -596,7 +596,7 @@ if not is_admin_or_segreteria:
             
             st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti auto (regola min 3 persone/auto).")
             
-            # REQUISITO 2: Selezione passeggeri obbligatoria
+            # Selezione passeggeri obbligatoria
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             
             selected_passengers = st.multiselect(

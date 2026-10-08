@@ -1,6 +1,6 @@
 import streamlit as st
 import datetime
-from datetime import date
+from datetime import date, datetime as dt, time
 from supabase import create_client, Client
 import pandas as pd
 import io
@@ -47,7 +47,7 @@ MAPPA_GIORNI_SETTIMANA = {
 }
 
 # Posti per zona (Piazzale: 17 posti, Docenti: 7 posti)
-TOTALE_POSTI_STUDENTI = 15 + 20 + 17  # 52 Posti Studenti (Bassa, Alta, Piazzale)
+TOTALE_POSTI_STUDENTI = 15 + 20 + 17  # 52 Posti Studenti
 DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse
 
 POSTI_PER_ZONA = {
@@ -64,7 +64,7 @@ for lista in POSTI_PER_ZONA.values():
     for p in lista:
         POSTI[p] = {}
 
-# --- FUNZIONI UTILITY ---
+# --- FUNZIONI UTILITY UTENTI & PASSEGGERI ---
 def is_valid_targa_italiana(targa_str):
     """Verifica il formato targa italiano (2 lettere, 3 numeri, 2 lettere)."""
     if not targa_str:
@@ -73,13 +73,61 @@ def is_valid_targa_italiana(targa_str):
     return bool(re.match(pattern, targa_str.strip().upper()))
 
 def check_is_alloggi(u_dict):
-    """Verifica se un utente è alloggiato da vari campi possibili."""
     if not isinstance(u_dict, dict):
         return False
     if u_dict.get("is_alloggi") or u_dict.get("alloggi"):
         return True
     grp = str(u_dict.get("gruppo", ""))
     return grp.startswith("Alloggi")
+
+def parse_passengers(turno_str):
+    """Estrae gli ID e i Nomi dei passeggeri memorizzati nel campo turno."""
+    if not turno_str or "| PASSENGERS_IDS:" not in turno_str:
+        return [], []
+    try:
+        parts = turno_str.split("|")
+        ids_part = [p for p in parts if "PASSENGERS_IDS:" in p][0].split("PASSENGERS_IDS:")[1].strip()
+        names_part = [p for p in parts if "PASSENGERS_NAMES:" in p][0].split("PASSENGERS_NAMES:")[1].strip()
+        pass_ids = [int(i) for i in ids_part.split(",") if i.strip().isdigit()]
+        pass_names = [n.strip() for n in names_part.split(",") if n.strip()]
+        return pass_ids, pass_names
+    except Exception:
+        return [], []
+
+def find_user_as_passenger(utente_id, prenotazioni_raw):
+    """Controlla se l'utente è stato registrato come passeggero per il giorno selezionato."""
+    for p in prenotazioni_raw:
+        p_ids, p_names = parse_passengers(p.get("turno", ""))
+        if utente_id in p_ids:
+            u_driver = (p.get("utenti") or {}).get("username", "Un compagno")
+            return True, u_driver, p.get("posto_id")
+    return False, None, None
+
+def get_lista_studenti(current_user_id):
+    """Recupera la lista di tutti gli studenti escludendo l'utente loggato."""
+    try:
+        res = supabase.table("utenti").select("id, username, gruppo").execute()
+        if res.data:
+            return [u for u in res.data if u.get("gruppo") in GRUPPI_STUDENTI and u.get("id") != current_user_id]
+    except Exception:
+        pass
+    return []
+
+# REQUISITO 4: Regola apertura venerdì ore 18:00
+def is_booking_open_for_student(data_target, now_dt=None):
+    if now_dt is None:
+        now_dt = dt.now()
+    
+    # Lunedì della settimana della data selezionata
+    target_monday = data_target - datetime.timedelta(days=data_target.weekday())
+    
+    # Orario apertura: Venerdì precedente alle 18:00
+    opening_dt = dt.combine(target_monday - datetime.timedelta(days=3), time(18, 0))
+    
+    if now_dt >= opening_dt:
+        return True, opening_dt
+    else:
+        return False, opening_dt
 
 # --- CALCOLO DINAMICO QUOTE & PRESENZE ---
 def get_corsi_presenti(data_obj):
@@ -183,19 +231,13 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
                     "targa": targa_visibile,
                     "gruppo": "EVENTO",
                     "turno": "TUTTO_IL_GIORNO",
-                    "is_mine": False
+                    "is_mine": False,
+                    "is_event": True
                 }
     return bloccati
 
 # --- FUNZIONE DI PRENOTAZIONE ATOMICA E SICURA CONTRO CONCORRENZA ---
 def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_turno):
-    """
-    Risoluzione definitiva della concorrenza:
-    Tenta l'inserimento nel DB. Se il posto è già stato preso da un altro utente
-    nello stesso istante, PostgreSQL rifiuta l'INSERT (vincolo UNIQUE) e il codice
-    passa automaticamente al posto successivo libero.
-    """
-    # 1. Verifica preventiva se l'utente ha già una prenotazione per questa data
     try:
         check_u = supabase.table("prenotazioni").select("id").eq("data", data_target).eq("utente_id", utente_id).execute()
         if check_u.data:
@@ -203,20 +245,17 @@ def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_t
     except Exception:
         pass
 
-    # 2. Recupera i posti attualmente occupati
     try:
         res_current = supabase.table("prenotazioni").select("posto_id").eq("data", data_target).execute()
         occupati_ora = set(r["posto_id"] for r in res_current.data) if res_current.data else set()
     except Exception:
         occupati_ora = set()
 
-    # 3. Cicla sui posti candidati e tenta l'inserimento
     for p_cand in lista_candidati:
         if p_cand in occupati_ora:
             continue
         
         try:
-            # L'INSERT fallirà a livello DB se un altro utente ha occupato p_cand un millisecondo prima
             res_ins = supabase.table("prenotazioni").insert({
                 "utente_id": utente_id,
                 "data": data_target,
@@ -227,7 +266,6 @@ def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_t
             if res_ins.data:
                 return True, p_cand
         except Exception:
-            # Se l'inserimento fallisce per conflitto di concorrenza, aggiunge il posto agli occupati e prova il successivo
             occupati_ora.add(p_cand)
             continue
             
@@ -361,45 +399,51 @@ for p in prenotazioni_raw:
         info_u = p.get("utenti") or {}
         u_grp = info_u.get("gruppo", "")
         u_name = info_u.get("username", "Occupato")
+        u_targa = info_u.get("targa", "-")
+        
+        # Parse passeggeri
+        pass_ids, pass_names = parse_passengers(p.get("turno", ""))
         
         is_own_booking = (u_id == utente_loggato.get("id"))
+        is_user_passenger = (utente_loggato.get("id") in pass_ids)
+        is_my_car = is_own_booking or is_user_passenger
+        
         is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
         is_alloggi_spot = str(p_id).startswith("Alloggi") or check_is_alloggi(info_u)
-        
-        # Gestione testo passeggeri da turno
-        turno_val = str(p.get("turno", ""))
-        txt_pass = ""
-        if "| Con:" in turno_val:
-            txt_pass = turno_val.split("| Con:")[1].strip()
 
-        # Privacy Studenti
-        if is_student and not is_own_booking:
-            targa_disp = "-"
-            if u_grp == gruppo_utente:
+        # REQUISITO 3: Privacy Studenti
+        if is_student:
+            if is_my_car:
                 username_disp = u_name
-                gruppo_disp = u_grp
+                targa_disp = u_targa
+                pass_disp = ", ".join(pass_names) if pass_names else "-"
+            elif u_grp == gruppo_utente:
+                username_disp = u_name
+                targa_disp = "-"
+                pass_disp = ", ".join(pass_names) if pass_names else "-"
             else:
                 username_disp = "Occupato"
-                gruppo_disp = "Altro Corso"
+                targa_disp = "-"
+                pass_disp = "-"
         elif is_staff_spot and not is_staff_or_admin:
             username_disp = "Staff"
             targa_disp = "-"
-            gruppo_disp = "Staff"
+            pass_disp = "-"
         else:
             username_disp = u_name
-            targa_disp = info_u.get("targa", "-")
-            gruppo_disp = u_grp
+            targa_disp = u_targa
+            pass_disp = ", ".join(pass_names) if pass_names else "-"
 
         prenotazioni_visibili[p_id] = {
             "id_prenotazione": p.get("id"),
             "utente_id": u_id,
             "username": username_disp,
             "targa": targa_disp,
-            "gruppo": gruppo_disp,
+            "gruppo": u_grp if (not is_student or u_grp == gruppo_utente or is_my_car) else "Altro Corso",
             "turno": "TUTTO_IL_GIORNO",
-            "is_mine": is_own_booking,
+            "is_mine": is_my_car,
             "is_alloggi": is_alloggi_spot,
-            "passeggeri": txt_pass
+            "passeggeri": pass_disp
         }
 
 # Gli studenti vedono le zone no-studenti SEMPRE come "Riservato Zona" (Grigio)
@@ -417,6 +461,12 @@ if is_student:
         }
 
 # --- 6. MAPPA INTERATTIVA ---
+# REQUISITO 1: Avviso Evento in questa data
+eventi_oggi = get_eventi_giorno(data_str)
+if eventi_oggi:
+    nomi_ev = ", ".join([e.get("nome_evento", "Evento") for e in eventi_oggi])
+    st.warning(f"⚠️ **ATTENZIONE: Evento programmato in data {data_visiva}! ({nomi_ev})**\nI posti riservati all'evento sono bloccati ed evidenziati sulla mappa.")
+
 st.subheader(f"🗺️ Mappa Parcheggi - {data_visiva}")
 
 def get_base64_image(image_path):
@@ -434,6 +484,7 @@ try:
     
     html_ready = html_raw.replace("ST_PRENOTAZIONI_JSON_PLACEHOLDER", json.dumps(prenotazioni_visibili))
     html_ready = html_ready.replace("ST_BACKGROUND_IMAGE_PLACEHOLDER", bg_image_base64)
+    html_ready = html_ready.replace("ST_IS_STUDENT_VIEW_PLACEHOLDER", "true" if is_student else "false")
     components.html(html_ready, height=800, scrolling=True)
 except Exception as e:
     st.error(f"⚠️ Impossibile caricare la mappa: {e}")
@@ -444,7 +495,6 @@ st.divider()
 quote_dinamiche, corsi_presenti_oggi, numero_iscritti = calcola_quote_posti(data_scelta)
 
 def ottieni_posti_liberi_zona(prefisso_lista):
-    """Restituisce la lista di posti attualmente non bloccati da eventi."""
     posti_liberi = []
     for p in prefisso_lista:
         if p in posti_bloccati_eventi:
@@ -456,6 +506,7 @@ def ottieni_posti_liberi_zona(prefisso_lista):
 
 if not is_admin_or_segreteria:
     mie_prenotazioni = [p for p in prenotazioni_raw if p["utente_id"] == utente_loggato["id"]]
+    is_passenger_check, driver_name_check, p_assigned_check = find_user_as_passenger(utente_loggato["id"], prenotazioni_raw)
     
     if mie_prenotazioni:
         st.warning("🏷️ Hai la seguente prenotazione/assegnazione per questo giorno:")
@@ -469,10 +520,24 @@ if not is_admin_or_segreteria:
                     supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
                     st.success("Prenotazione annullata!")
                     st.rerun()
+
+    # REQUISITO 2: Se l'utente è registrato come passeggero, gli si mostra l'avviso e si blocca la prenotazione
+    elif is_passenger_check:
+        st.info(f"🚗 **Sei registrato come passeggero** nell'auto di **{driver_name_check}** (Posto **{p_assigned_check}**) per il giorno **{data_visiva}**.")
+        st.caption("Risultando già presente come passeggero, non puoi effettuare un'ulteriore prenotazione come conducente.")
+
     else:
         st.subheader("📌 Prenota il tuo Posto Auto")
 
-        # Controllo Targa Obbligatoria prima di mostrare i form
+        # REQUISITO 4: Controllo Apertura Prenotazioni Venerdì Ore 18:00
+        if is_student:
+            is_open, open_datetime = is_booking_open_for_student(data_scelta)
+            if not is_open:
+                st.warning(f"⏳ **Prenotazioni non ancora aperte per il giorno {data_visiva}!**")
+                st.info(f"Le prenotazioni per la settimana del **{data_scelta.strftime('%d/%m/%Y')}** si apriranno **Venerdì {open_datetime.strftime('%d/%m/%Y')} alle ore 18:00**.")
+                st.stop()
+
+        # Controllo Targa Obbligatoria
         if not targa_valida:
             st.error("⚠️ **TARGA NON IMPOSTATA O NON VALIDA!**")
             st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
@@ -531,30 +596,42 @@ if not is_admin_or_segreteria:
             
             st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti auto (regola min 3 persone/auto).")
             
-            # Inserimento Passeggeri
-            passeggeri_input = st.text_input("👥 Con chi sei in auto? (Passeggeri/Note opzionali):", placeholder="Es. Mario Rossi, Luca Bianchi")
+            # REQUISITO 2: Selezione passeggeri obbligatoria
+            studenti_disponibili = get_lista_studenti(utente_loggato["id"])
+            
+            selected_passengers = st.multiselect(
+                "👥 Seleziona chi è in auto con te (OBBLIGATORIO - Almeno 1 passeggero):",
+                options=studenti_disponibili,
+                format_func=lambda u: f"{u['username']} ({u['gruppo']})",
+                key="ms_passengers_select"
+            )
 
             if occupati_gruppo >= max_quota:
                 st.error(f"❌ Limite raggiunto! Il gruppo **{gruppo_utente}** ha esaurito la quota massima di **{max_quota}** auto per oggi.")
             else:
                 if st.button("Prenota Posto Auto Studenti 🚗", use_container_width=True):
-                    candidati_studenti = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Alta"] + POSTI_PER_ZONA["Piazzale"])
-                    
-                    if candidati_studenti:
-                        txt_turno = f"TUTTO_IL_GIORNO | Con: {passeggeri_input.strip()}" if passeggeri_input.strip() else "TUTTO_IL_GIORNO"
-                        
-                        # Esecuzione prenotazione atomica sicura
-                        ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_studenti, txt_turno)
-                        
-                        if ok:
-                            st.success(f"🎉 Ti è stato assegnato il **Posto {esito}**!")
-                            st.rerun()
-                        elif esito == "HAI_GIA_PRENOTATO":
-                            st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
-                        else:
-                            st.error("❌ I posti liberi sono stati appena occupati da altri utenti. Riprova.")
+                    if not selected_passengers:
+                        st.error("❌ **ATTENZIONE**: Devi selezionare **almeno un passeggero** che viaggia con te per poter prenotare (regola carpooling)!")
                     else:
-                        st.error("❌ Tutti i posti studenti sono occupati o bloccati per eventi.")
+                        candidati_studenti = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Alta"] + POSTI_PER_ZONA["Piazzale"])
+                        
+                        if candidati_studenti:
+                            p_ids = [u["id"] for u in selected_passengers]
+                            p_names = [u["username"] for u in selected_passengers]
+                            
+                            txt_turno = f"TUTTO_IL_GIORNO | PASSENGERS_IDS:{','.join(map(str, p_ids))} | PASSENGERS_NAMES:{','.join(p_names)}"
+                            
+                            ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_studenti, txt_turno)
+                            
+                            if ok:
+                                st.success(f"🎉 Ti è stato assegnato il **Posto {esito}** con {len(selected_passengers)} passeggeri registrati!")
+                                st.rerun()
+                            elif esito == "HAI_GIA_PRENOTATO":
+                                st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
+                            else:
+                                st.error("❌ I posti liberi sono stati appena occupati da altri utenti. Riprova.")
+                        else:
+                            st.error("❌ Tutti i posti studenti sono occupati o bloccati per eventi.")
 
 # --- 8. PANNELLO AMMINISTRAZIONE & SEGRETERIA ---
 else:
@@ -832,16 +909,16 @@ else:
                         p_data_raw = str(item.get("data", ""))
                         p_user = u_info.get("username", "Occupato")
                         
-                        t_val = str(item.get("turno", ""))
-                        pass_txt = t_val.split("| Con:")[1].strip() if "| Con:" in t_val else "-"
+                        p_ids, p_names = parse_passengers(item.get("turno", ""))
+                        pass_txt = ", ".join(p_names) if p_names else "-"
 
                         lista_excel.append({
                             "Data": "PERMANENTE" if p_data_raw == DATA_PERMANENTE else p_data_raw,
                             "Posto": item.get("posto_id"),
-                            "Utente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
+                            "Conducente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
                             "Gruppo": u_info.get("gruppo", "-") if p_user.lower() != 'admin' else "-",
                             "Targa": u_info.get("targa", "-") if p_user.lower() != 'admin' else "-",
-                            "Passeggeri/Note": pass_txt
+                            "Passeggeri in Auto": pass_txt
                         })
                     
                     df_excel = pd.DataFrame(lista_excel)

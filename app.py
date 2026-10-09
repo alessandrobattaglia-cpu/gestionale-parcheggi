@@ -793,7 +793,7 @@ else:
             except Exception as ex:
                 st.error(f"Errore caricamento: {ex}")
 
-    # TAB 3: GESTIONE EVENTI
+  # TAB 3: GESTIONE EVENTI E MODIFICA TESTI POSTI
     with tab3:
         st.write("### 🎉 Modalità Eventi e Blocco Parcheggi")
         col_e1, col_e2 = st.columns(2)
@@ -807,7 +807,7 @@ else:
         posti_interessati = list(POSTI.keys()) if "TUTTI" in blocchi_selezionati else [p for b in blocchi_selezionati if b in POSTI_PER_ZONA for p in POSTI_PER_ZONA[b]]
         dettagli_posti = {}
         if posti_interessati:
-            with st.expander("✏️ Personalizza indicazione per singoli posti"):
+            with st.expander("✏️ Personalizza indicazione per singoli posti (in fase di creazione)"):
                 cols_ev = st.columns(3)
                 for idx, p_id in enumerate(posti_interessati):
                     c_target = cols_ev[idx % 3]
@@ -833,7 +833,7 @@ else:
                 st.rerun()
 
         st.divider()
-        st.write("### 📋 Eventi Programmati")
+        st.write("### 📋 Eventi Programmati & Modifica Posti")
         try:
             res_ev_all = supabase.table("eventi").select("*").gte("data", oggi.strftime("%Y-%m-%d")).order("data").execute()
             if res_ev_all.data:
@@ -843,13 +843,55 @@ else:
                     col_ev1.write(f"📅 **{ev.get('data')}**")
                     col_ev2.write(f"🎉 **{ev.get('nome_evento')}**")
                     col_ev3.write(f"🚫 Blocchi: `{ev.get('blocchi')}`")
-                    if col_ev4.button("🗑️", key=f"del_ev_{ev_id}"):
+                    if col_ev4.button("🗑️ Eliminare", key=f"del_ev_{ev_id}"):
                         supabase.table("eventi").delete().eq("id", ev_id).execute()
                         st.success("Evento eliminato!")
                         st.rerun()
-        except Exception:
-            pass
+                    
+                    # SEZIONE DI MODIFICA POST-CREAZIONE
+                    with st.expander(f"✏️ Modifica Dettagli e Nomi Posti: {ev.get('nome_evento')}"):
+                        with st.form(key=f"form_mod_ev_{ev_id}"):
+                            m_nome = st.text_input("Nome Evento:", value=ev.get("nome_evento", ""))
+                            m_note = st.text_area("Note Evento:", value=ev.get("note", ""))
+                            
+                            curr_b = ev.get("blocchi", "TUTTI")
+                            b_def = [b.strip() for b in curr_b.split(",")] if isinstance(curr_b, str) else (curr_b if isinstance(curr_b, list) else ["TUTTI"])
+                            m_blocchi = st.multiselect("Blocchi Parcheggio:", options=["TUTTI", "Bassa", "Alta", "Piazzale", "Staff", "Docenti", "Alloggi"], default=b_def)
+                            
+                            det_p_curr = ev.get("dettagli_posti") or {}
+                            if isinstance(det_p_curr, str):
+                                try:
+                                    det_p_curr = json.loads(det_p_curr)
+                                except Exception:
+                                    det_p_curr = {}
+                            elif not isinstance(det_p_curr, dict):
+                                det_p_curr = {}
 
+                            st.caption("Personalizza testo/ospite assegnato a ciascun posto auto:")
+                            imp_spots = list(POSTI.keys()) if "TUTTI" in m_blocchi else [p for b in m_blocchi if b in POSTI_PER_ZONA for p in POSTI_PER_ZONA[b]]
+                            
+                            cols_m = st.columns(2)
+                            m_dettagli = {}
+                            for idx, p_k in enumerate(imp_spots):
+                                c_target = cols_m[idx % 2]
+                                val_input = c_target.text_input(f"Posto {p_k}:", value=det_p_curr.get(p_k, ""), key=f"inp_mod_{ev_id}_{p_k}")
+                                if val_input.strip():
+                                    m_dettagli[p_k] = val_input.strip()
+
+                            if st.form_submit_button("Salva Modifiche Evento 💾", use_container_width=True):
+                                str_m_blocchi = "TUTTI" if "TUTTI" in m_blocchi else ",".join(m_blocchi)
+                                supabase.table("eventi").update({
+                                    "nome_evento": m_nome.strip(),
+                                    "note": m_note.strip(),
+                                    "blocchi": str_m_blocchi,
+                                    "dettagli_posti": json.dumps(m_dettagli)
+                                }).eq("id", ev_id).execute()
+                                st.success("Dettagli dell'evento e dei posti aggiornati con successo!")
+                                st.rerun()
+                    st.divider()
+        except Exception as ex_ev_list:
+            st.info(f"Nessun evento caricato: {ex_ev_list}")
+            
     # TAB 4: PRESENZE CORSI
     with tab4:
         st.write(f"### 🗓️ Presenza Corsi in Lezione - {data_visiva}")

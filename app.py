@@ -64,6 +64,16 @@ for lista in POSTI_PER_ZONA.values():
     for p in lista:
         POSTI[p] = {}
 
+# Mappatura prefissi abbreviazioni per i report Excel
+PREFIX_MAP = {
+    "Bassa": "B",
+    "Alta": "A",
+    "Piazzale": "P",
+    "Staff": "S",
+    "Docenti": "D",
+    "Alloggi": "AL"
+}
+
 # --- FUNZIONI UTILITY UTENTI & PASSEGGERI ---
 def is_valid_targa_italiana(targa_str):
     """Verifica il formato targa italiano (2 lettere, 3 numeri, 2 lettere)."""
@@ -118,16 +128,62 @@ def is_booking_open_for_student(data_target, now_dt=None):
     if now_dt is None:
         now_dt = dt.now()
     
-    # Lunedì della settimana della data selezionata
     target_monday = data_target - datetime.timedelta(days=data_target.weekday())
-    
-    # Orario apertura: Venerdì precedente alle 18:00
-    opening_dt = dt.combine(target_monday - datetime.timedelta(days=5), time(18, 0))
+    opening_dt = dt.combine(target_monday - datetime.timedelta(days=3), time(18, 0))
     
     if now_dt >= opening_dt:
         return True, opening_dt
     else:
         return False, opening_dt
+
+# --- FUNZIONE GENERAZIONE EXCEL PER EVENTI ---
+def genera_excel_evento(ev, POSTI_PER_ZONA):
+    det_posti = ev.get("dettagli_posti") or {}
+    if isinstance(det_posti, str):
+        try:
+            det_posti = json.loads(det_posti)
+        except Exception:
+            det_posti = {}
+    elif not isinstance(det_posti, dict):
+        det_posti = {}
+
+    blocchi = ev.get("blocchi", "TUTTI")
+    blocchi_list = [b.strip() for b in blocchi.split(",")] if isinstance(blocchi, str) else blocchi
+
+    rows = []
+    for zona, lista_p in POSTI_PER_ZONA.items():
+        if "TUTTI" in blocchi_list or zona in blocchi_list:
+            for p_id in lista_p:
+                parts = p_id.split("-")
+                cod_abbr = f"{PREFIX_MAP.get(parts[0], parts[0][0])}{parts[1]}"
+                ospite = det_posti.get(p_id, "").strip()
+                if not ospite:
+                    ospite = ev.get("note") if ev.get("note") else "Riservato Evento"
+                
+                rows.append({
+                    "Codice Mappa": cod_abbr,
+                    "Posto": p_id,
+                    "Zona": zona,
+                    "Ospite / Assegnazione Specifica": ospite,
+                    "Stato": "Riservato Evento",
+                    "Spunta Ingresso": "[   ]"
+                })
+
+    df_posti = pd.DataFrame(rows)
+    df_info = pd.DataFrame([
+        {"Parametro": "Nome Evento", "Valore": ev.get("nome_evento")},
+        {"Parametro": "Data Evento", "Valore": ev.get("data")},
+        {"Parametro": "Zone Bloccate", "Valore": ev.get("blocchi")},
+        {"Parametro": "Totale Posti Riservati", "Valore": len(rows)},
+        {"Parametro": "Note Generali Evento", "Valore": ev.get("note", "")}
+    ])
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df_posti.to_excel(writer, index=False, sheet_name='Posti Evento (Da Stampare)')
+        df_info.to_excel(writer, index=False, sheet_name='Riepilogo Evento')
+    buffer.seek(0)
+    return buffer
 
 # --- CALCOLO DINAMICO QUOTE & PRESENZE ---
 def get_corsi_presenti(data_obj):
@@ -461,7 +517,6 @@ if is_student:
         }
 
 # --- 6. MAPPA INTERATTIVA ---
-# Avviso Evento in questa data (Banner Rosso Scuro)
 eventi_oggi = get_eventi_giorno(data_str)
 if eventi_oggi:
     nomi_ev = ", ".join([e.get("nome_evento", "Evento") for e in eventi_oggi])
@@ -521,7 +576,6 @@ if not is_admin_or_segreteria:
                     st.success("Prenotazione annullata!")
                     st.rerun()
 
-    # Se l'utente è registrato come passeggero, mostra l'avviso e blocca la prenotazione
     elif is_passenger_check:
         st.info(f"🚗 **Sei registrato come passeggero** nell'auto di **{driver_name_check}** (Posto **{p_assigned_check}**) per il giorno **{data_visiva}**.")
         st.caption("Risultando già presente come passeggero, non puoi effettuare un'ulteriore prenotazione come conducente.")
@@ -529,7 +583,6 @@ if not is_admin_or_segreteria:
     else:
         st.subheader("📌 Prenota il tuo Posto Auto")
 
-        # Controllo Apertura Prenotazioni Venerdì Ore 18:00
         if is_student:
             is_open, open_datetime = is_booking_open_for_student(data_scelta)
             if not is_open:
@@ -537,7 +590,6 @@ if not is_admin_or_segreteria:
                 st.info(f"Le prenotazioni per la settimana del **{data_scelta.strftime('%d/%m/%Y')}** si apriranno **Venerdì {open_datetime.strftime('%d/%m/%Y')} alle ore 18:00**.")
                 st.stop()
 
-        # Controllo Targa Obbligatoria
         if not targa_valida:
             st.error("⚠️ **TARGA NON IMPOSTATA O NON VALIDA!**")
             st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
@@ -596,11 +648,10 @@ if not is_admin_or_segreteria:
             
             st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti auto (regola min 3 persone/auto).")
             
-            # Selezione passeggeri obbligatoria
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             
             selected_passengers = st.multiselect(
-                "👥 Seleziona chi è in auto con te (OBBLIGATORIO):",
+                "👥 Seleziona chi è in auto con te (OBBLIGATORIO - Almeno 1 passeggero):",
                 options=studenti_disponibili,
                 format_func=lambda u: f"{u['username']} ({u['gruppo']})",
                 key="ms_passengers_select"
@@ -793,7 +844,7 @@ else:
             except Exception as ex:
                 st.error(f"Errore caricamento: {ex}")
 
-  # TAB 3: GESTIONE EVENTI E MODIFICA TESTI POSTI
+    # TAB 3: GESTIONE EVENTI E DOWNLOAD REPORT EVENTI
     with tab3:
         st.write("### 🎉 Modalità Eventi e Blocco Parcheggi")
         col_e1, col_e2 = st.columns(2)
@@ -833,25 +884,40 @@ else:
                 st.rerun()
 
         st.divider()
-        st.write("### 📋 Eventi Programmati & Modifica Posti")
+        st.write("### 📋 Eventi Programmati & Report per Stampa")
         try:
             res_ev_all = supabase.table("eventi").select("*").gte("data", oggi.strftime("%Y-%m-%d")).order("data").execute()
             if res_ev_all.data:
                 for ev in res_ev_all.data:
                     ev_id = ev.get("id")
-                    col_ev1, col_ev2, col_ev3, col_ev4 = st.columns([2, 3, 3, 1])
-                    col_ev1.write(f"📅 **{ev.get('data')}**")
-                    col_ev2.write(f"🎉 **{ev.get('nome_evento')}**")
+                    ev_dt = ev.get("data")
+                    ev_nm = ev.get("nome_evento")
+                    
+                    col_ev1, col_ev2, col_ev3, col_ev4 = st.columns([2, 3, 2, 1])
+                    col_ev1.write(f"📅 **{ev_dt}**")
+                    col_ev2.write(f"🎉 **{ev_nm}**")
                     col_ev3.write(f"🚫 Blocchi: `{ev.get('blocchi')}`")
+                    
                     if col_ev4.button("🗑️ Eliminare", key=f"del_ev_{ev_id}"):
                         supabase.table("eventi").delete().eq("id", ev_id).execute()
                         st.success("Evento eliminato!")
                         st.rerun()
                     
-                    # SEZIONE DI MODIFICA POST-CREAZIONE
-                    with st.expander(f"✏️ Modifica Dettagli e Nomi Posti: {ev.get('nome_evento')}"):
+                    # DOWNLOAD REPORT EXCEL PER EVENTO (REQUISITO 1)
+                    buf_ev = genera_excel_evento(ev, POSTI_PER_ZONA)
+                    st.download_button(
+                        label=f"📥 Scarica Report Evento '{ev_nm}' (Excel per Stampa)",
+                        data=buf_ev,
+                        file_name=f"evento_{ev_nm.replace(' ', '_')}_{ev_dt}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_ev_{ev_id}",
+                        use_container_width=True
+                    )
+                    
+                    # SEZIONE MODIFICA POSTI
+                    with st.expander(f"✏️ Modifica Dettagli e Nomi Posti: {ev_nm}"):
                         with st.form(key=f"form_mod_ev_{ev_id}"):
-                            m_nome = st.text_input("Nome Evento:", value=ev.get("nome_evento", ""))
+                            m_nome = st.text_input("Nome Evento:", value=ev_nm)
                             m_note = st.text_area("Note Evento:", value=ev.get("note", ""))
                             
                             curr_b = ev.get("blocchi", "TUTTI")
@@ -886,12 +952,12 @@ else:
                                     "blocchi": str_m_blocchi,
                                     "dettagli_posti": json.dumps(m_dettagli)
                                 }).eq("id", ev_id).execute()
-                                st.success("Dettagli dell'evento e dei posti aggiornati con successo!")
+                                st.success("Dettagli evento aggiornati!")
                                 st.rerun()
                     st.divider()
         except Exception as ex_ev_list:
             st.info(f"Nessun evento caricato: {ex_ev_list}")
-            
+
     # TAB 4: PRESENZE CORSI
     with tab4:
         st.write(f"### 🗓️ Presenza Corsi in Lezione - {data_visiva}")
@@ -934,7 +1000,7 @@ else:
         st.dataframe(df_quote, use_container_width=True)
         
         st.divider()
-        st.write("### 📋 Download Report Excel")
+        st.write("### 📋 Download Report Excel Generale")
         tipo_report = st.radio("Ambito report:", ["Report Giornaliero (Data selezionata)", "Report Completo (Tutti i dati)"], horizontal=True)
         
         if st.button("Genera e Scarica Report Excel 📥", use_container_width=True):
@@ -950,13 +1016,18 @@ else:
                         u_info = item.get("utenti") or {}
                         p_data_raw = str(item.get("data", ""))
                         p_user = u_info.get("username", "Occupato")
+                        p_id = item.get("posto_id", "")
                         
+                        parts = p_id.split("-") if p_id else ["", ""]
+                        cod_abbr = f"{PREFIX_MAP.get(parts[0], parts[0][0])}{parts[1]}" if len(parts) > 1 else p_id
+
                         p_ids, p_names = parse_passengers(item.get("turno", ""))
                         pass_txt = ", ".join(p_names) if p_names else "-"
 
                         lista_excel.append({
                             "Data": "PERMANENTE" if p_data_raw == DATA_PERMANENTE else p_data_raw,
-                            "Posto": item.get("posto_id"),
+                            "Codice Mappa": cod_abbr,
+                            "Posto": p_id,
                             "Conducente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
                             "Gruppo": u_info.get("gruppo", "-") if p_user.lower() != 'admin' else "-",
                             "Targa": u_info.get("targa", "-") if p_user.lower() != 'admin' else "-",

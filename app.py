@@ -53,7 +53,7 @@ DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse
 POSTI_PER_ZONA = {
     "Bassa": [f"Bassa-{i}" for i in range(1, 16)],
     "Alta": [f"Alta-{i}" for i in range(1, 21)],
-    "Piazzale": [f"Piazzale-{i}" for i in range(1, 13)],
+    "Piazzale": [f"Piazzale-{i}" for i in range(1, 18)],
     "Staff": [f"Staff-{i}" for i in range(1, 25)],       # 24 posti Staff
     "Docenti": [f"Docenti-{i}" for i in range(1, 8)],
     "Alloggi": [f"Alloggi-{i}" for i in range(1, 14)]

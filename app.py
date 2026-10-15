@@ -46,17 +46,17 @@ MAPPA_GIORNI_SETTIMANA = {
     "Domenica": 6
 }
 
-# Posti per zona (Piazzale: 17 posti, Docenti: 7 posti)
+# Posti per zona
 TOTALE_POSTI_STUDENTI = 15 + 20 + 17  # 52 Posti Studenti
 DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse
 
 POSTI_PER_ZONA = {
     "Bassa": [f"Bassa-{i}" for i in range(1, 16)],
     "Alta": [f"Alta-{i}" for i in range(1, 21)],
-    "Piazzale": [f"Piazzale-{i}" for i in range(1, 18)], # 17 posti
-    "Staff": [f"Staff-{i}" for i in range(1, 24)],       # 23 posti
-    "Docenti": [f"Docenti-{i}" for i in range(1, 8)],     # 7 posti
-    "Alloggi": [f"Alloggi-{i}" for i in range(1, 14)]     # 13 posti
+    "Piazzale": [f"Piazzale-{i}" for i in range(1, 18)],
+    "Staff": [f"Staff-{i}" for i in range(1, 24)],
+    "Docenti": [f"Docenti-{i}" for i in range(1, 8)],
+    "Alloggi": [f"Alloggi-{i}" for i in range(1, 14)]
 }
 
 POSTI = {}
@@ -74,9 +74,41 @@ PREFIX_MAP = {
     "Alloggi": "AL"
 }
 
+# --- FUNZIONE LOGICA MAPPAZIONE ZONE EVENTO ---
+def get_zona_evento(posto_id):
+    """
+    Ritorna la Zona Evento associata al posto auto:
+    - Zona Gialla: Staff 1-11 + tutta Bassa
+    - Zona Verde: Tutto Piazzale + tutto Docenti + Staff 12-17
+    - Zona Rossa: Tutta Alta
+    - Zona Blu: Tutta Alloggi
+    - Zona Grigia: I restanti (Staff 18-23)
+    """
+    if not posto_id:
+        return "-"
+    parts = posto_id.split("-")
+    pref = parts[0]
+    num = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    
+    if pref == "Bassa":
+        return "Zona Gialla"
+    elif pref == "Alta":
+        return "Zona Rossa"
+    elif pref == "Piazzale" or pref == "Docenti":
+        return "Zona Verde"
+    elif pref == "Alloggi":
+        return "Zona Blu"
+    elif pref == "Staff":
+        if 1 <= num <= 11:
+            return "Zona Gialla"
+        elif 12 <= num <= 17:
+            return "Zona Verde"
+        else:
+            return "Zona Grigia"
+    return "Zona Grigia"
+
 # --- FUNZIONI UTILITY UTENTI & PASSEGGERI ---
 def is_valid_targa_italiana(targa_str):
-    """Verifica il formato targa italiano (2 lettere, 3 numeri, 2 lettere)."""
     if not targa_str:
         return False
     pattern = r"^[A-Z]{2}\d{3}[A-Z]{2}$"
@@ -91,7 +123,6 @@ def check_is_alloggi(u_dict):
     return grp.startswith("Alloggi")
 
 def parse_passengers(turno_str):
-    """Estrae gli ID e i Nomi dei passeggeri memorizzati nel campo turno."""
     if not turno_str or "| PASSENGERS_IDS:" not in turno_str:
         return [], []
     try:
@@ -105,7 +136,6 @@ def parse_passengers(turno_str):
         return [], []
 
 def find_user_as_passenger(utente_id, prenotazioni_raw):
-    """Controlla se l'utente è stato registrato come passeggero per il giorno selezionato."""
     for p in prenotazioni_raw:
         p_ids, p_names = parse_passengers(p.get("turno", ""))
         if utente_id in p_ids:
@@ -114,7 +144,6 @@ def find_user_as_passenger(utente_id, prenotazioni_raw):
     return False, None, None
 
 def get_lista_studenti(current_user_id):
-    """Recupera la lista di tutti gli studenti escludendo l'utente loggato."""
     try:
         res = supabase.table("utenti").select("id, username, gruppo").execute()
         if res.data:
@@ -123,7 +152,6 @@ def get_lista_studenti(current_user_id):
         pass
     return []
 
-# Regola apertura venerdì ore 18:00
 def is_booking_open_for_student(data_target, now_dt=None):
     if now_dt is None:
         now_dt = dt.now()
@@ -151,9 +179,12 @@ def genera_excel_evento(ev, POSTI_PER_ZONA):
     blocchi_list = [b.strip() for b in blocchi.split(",")] if isinstance(blocchi, str) else blocchi
 
     rows = []
-    for zona, lista_p in POSTI_PER_ZONA.items():
-        if "TUTTI" in blocchi_list or zona in blocchi_list:
-            for p_id in lista_p:
+    zone_count = {}
+
+    for zona_p, lista_p in POSTI_PER_ZONA.items():
+        for p_id in lista_p:
+            z_ev = get_zona_evento(p_id)
+            if "TUTTI" in blocchi_list or zona_p in blocchi_list or z_ev in blocchi_list:
                 parts = p_id.split("-")
                 cod_abbr = f"{PREFIX_MAP.get(parts[0], parts[0][0])}{parts[1]}"
                 ospite = det_posti.get(p_id, "").strip()
@@ -163,20 +194,27 @@ def genera_excel_evento(ev, POSTI_PER_ZONA):
                 rows.append({
                     "Codice Mappa": cod_abbr,
                     "Posto": p_id,
-                    "Zona": zona,
+                    "Zona Evento": z_ev,
+                    "Zona Parcheggio": zona_p,
                     "Ospite / Assegnazione Specifica": ospite,
                     "Stato": "Riservato Evento",
                     "Spunta Ingresso": "[   ]"
                 })
+                zone_count[z_ev] = zone_count.get(z_ev, 0) + 1
 
     df_posti = pd.DataFrame(rows)
-    df_info = pd.DataFrame([
+    
+    info_list = [
         {"Parametro": "Nome Evento", "Valore": ev.get("nome_evento")},
         {"Parametro": "Data Evento", "Valore": ev.get("data")},
         {"Parametro": "Zone Bloccate", "Valore": ev.get("blocchi")},
         {"Parametro": "Totale Posti Riservati", "Valore": len(rows)},
         {"Parametro": "Note Generali Evento", "Valore": ev.get("note", "")}
-    ])
+    ]
+    for z_name, c_val in zone_count.items():
+        info_list.append({"Parametro": f"Posti in {z_name}", "Valore": c_val})
+
+    df_info = pd.DataFrame(info_list)
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -273,7 +311,8 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
             
         for p_id in POSTI.keys():
             prefisso = p_id.split("-")[0]
-            if "TUTTI" in blocchi_list or prefisso in blocchi_list:
+            z_ev = get_zona_evento(p_id)
+            if "TUTTI" in blocchi_list or prefisso in blocchi_list or z_ev in blocchi_list:
                 testo_specifico = ev_dettagli.get(p_id, "").strip()
                 if not testo_specifico:
                     testo_specifico = ev_note if ev_note else "Riservato Evento"
@@ -288,11 +327,11 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
                     "gruppo": "EVENTO",
                     "turno": "TUTTO_IL_GIORNO",
                     "is_mine": False,
-                    "is_event": True
+                    "is_event": True,
+                    "zona_evento": z_ev
                 }
     return bloccati
 
-# --- FUNZIONE DI PRENOTAZIONE ATOMICA E SICURA CONTRO CONCORRENZA ---
 def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_turno):
     try:
         check_u = supabase.table("prenotazioni").select("id").eq("data", data_target).eq("utente_id", utente_id).execute()
@@ -367,21 +406,19 @@ is_staff_or_admin = is_admin_or_segreteria or (gruppo_utente == "Staff")
 is_alloggi_user = check_is_alloggi(utente_loggato)
 is_student = (not is_admin_or_segreteria) and (gruppo_utente in GRUPPI_STUDENTI)
 
-# --- SIDEBAR DI CONTROLLO & GESTIONE ---
+# --- SIDEBAR DI CONTROLLO ---
 st.sidebar.header("👤 Account")
 st.sidebar.write(f"Utente: **{username}**")
 st.sidebar.write(f"Ruolo/Corso: **{gruppo_utente}**")
 if is_alloggi_user:
     st.sidebar.info("🏠 **Residente Alloggi**")
 
-# Controllo Validità Targa Italiana
 targa_valida = is_valid_targa_italiana(targa_utente)
 if targa_valida:
     st.sidebar.success(f"Targa: **{targa_utente}** 🟢")
 else:
     st.sidebar.error("Targa: **Non valida o mancante!** 🔴")
 
-# Modifica Targa
 with st.sidebar.expander("✏️ Modifica la tua Targa (Formato IT)"):
     st.caption("Esempio valido: **AA123BB** (2 lettere, 3 cifre, 2 lettere)")
     nuova_targa = st.text_input("Nuova Targa:", value=targa_utente, key="input_targa")
@@ -395,7 +432,6 @@ with st.sidebar.expander("✏️ Modifica la tua Targa (Formato IT)"):
             st.success("Targa aggiornata con successo!")
             st.rerun()
 
-# Cambio Password
 with st.sidebar.expander("🔑 Modifica Password"):
     old_pwd = st.text_input("Password Attuale:", type="password", key="pwd_old")
     new_pwd = st.text_input("Nuova Password:", type="password", key="pwd_new")
@@ -404,7 +440,7 @@ with st.sidebar.expander("🔑 Modifica Password"):
         if old_pwd != utente_loggato.get("password"):
             st.error("❌ La password attuale non è corretta.")
         elif not new_pwd or new_pwd != conf_pwd:
-            st.error("❌ Le nuove password non coincidono o sono vuote.")
+            st.error("❌ Le nuove password non совпадают o sono vuote.")
         else:
             supabase.table("utenti").update({"password": new_pwd}).eq("id", utente_loggato["id"]).execute()
             st.session_state["utente_autenticato"]["password"] = new_pwd
@@ -439,7 +475,7 @@ except Exception:
     except Exception:
         pass
 
-# --- 5. PREPARAZIONE DATI PER MAPPA CON PRIVACY & EVIDENZIAZIONE POSTO ---
+# --- 5. PREPARAZIONE DATI PER MAPPA CON PRIVACY & ZONE EVENTI ---
 posti_bloccati_eventi = get_posti_bloccati_evento(data_str, is_staff_or_admin=is_staff_or_admin)
 prenotazioni_visibili = {}
 
@@ -457,7 +493,6 @@ for p in prenotazioni_raw:
         u_name = info_u.get("username", "Occupato")
         u_targa = info_u.get("targa", "-")
         
-        # Parse passeggeri
         pass_ids, pass_names = parse_passengers(p.get("turno", ""))
         
         is_own_booking = (u_id == utente_loggato.get("id"))
@@ -467,7 +502,6 @@ for p in prenotazioni_raw:
         is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
         is_alloggi_spot = str(p_id).startswith("Alloggi") or check_is_alloggi(info_u)
 
-        # Privacy Studenti
         if is_student:
             if is_my_car:
                 username_disp = u_name
@@ -499,28 +533,30 @@ for p in prenotazioni_raw:
             "turno": "TUTTO_IL_GIORNO",
             "is_mine": is_my_car,
             "is_alloggi": is_alloggi_spot,
-            "passeggeri": pass_disp
+            "passeggeri": pass_disp,
+            "zona_evento": get_zona_evento(p_id)
         }
 
-# Gli studenti vedono le zone no-studenti SEMPRE come "Riservato Zona" (Grigio)
 if is_student:
     zone_non_studenti = POSTI_PER_ZONA["Staff"] + POSTI_PER_ZONA["Docenti"] + POSTI_PER_ZONA["Alloggi"]
     for p_id in zone_non_studenti:
-        prenotazioni_visibili[p_id] = {
-            "id_prenotazione": None,
-            "utente_id": None,
-            "username": "Riservato Zona",
-            "targa": "-",
-            "gruppo": "RISERVATO",
-            "turno": "TUTTO_IL_GIORNO",
-            "is_mine": False
-        }
+        if p_id not in prenotazioni_visibili:
+            prenotazioni_visibili[p_id] = {
+                "id_prenotazione": None,
+                "utente_id": None,
+                "username": "Riservato Zona",
+                "targa": "-",
+                "gruppo": "RISERVATO",
+                "turno": "TUTTO_IL_GIORNO",
+                "is_mine": False,
+                "zona_evento": get_zona_evento(p_id)
+            }
 
 # --- 6. MAPPA INTERATTIVA ---
 eventi_oggi = get_eventi_giorno(data_str)
 if eventi_oggi:
     nomi_ev = ", ".join([e.get("nome_evento", "Evento") for e in eventi_oggi])
-    st.error(f"🚨 **ATTENZIONE: EVENTO PROGRAMMATO IN DATA {data_visiva}! ({nomi_ev})**\nI posti riservati all'evento sono bloccati ed evidenziati in rosso scuro sulla mappa.")
+    st.error(f"🚨 **ATTENZIONE: EVENTO PROGRAMMATO IN DATA {data_visiva}! ({nomi_ev})**\nI posti riservati all'evento sono evidenziati sulla mappa in base alle rispettive Zone Evento (🟡 Gialla, 🟢 Verde, 🔴 Rossa, 🔵 Blu, ⚪ Grigia).")
 
 st.subheader(f"🗺️ Mappa Parcheggi - {data_visiva}")
 
@@ -596,7 +632,7 @@ if not is_admin_or_segreteria:
             st.stop()
 
         if is_alloggi_user:
-            st.info("🏠 **Sei un utente residente negli Alloggi.** I posti parcheggio alloggiati vengono assegnati direttamente dall'Amministrazione. Non hai ancora un posto assegnato per questa data.")
+            st.info("🏠 **Sei un utente residente negli Alloggi.** I posti parcheggio alloggiati vengono assegnati direttamente dall'Amministrazione.")
 
         elif gruppo_utente in ["Staff", "Segreteria"]:
             st.info("ℹ️ Come membro dello Staff / Segreteria puoi riservare un posto giornaliero o permanente.")
@@ -707,11 +743,11 @@ else:
             if posto_admin != "-- Seleziona --":
                 if posto_admin in posti_bloccati_eventi:
                     info_p = posti_bloccati_eventi[posto_admin]
-                    st.warning(f"Il posto **{posto_admin}** è bloccato da un Evento ({info_p['username']}) - Riservato: `{info_p['targa']}`")
+                    st.warning(f"Il posto **{posto_admin}** è bloccato da un Evento ({info_p['username']}) - {info_p['zona_evento']} - Riservato: `{info_p['targa']}`")
                 else:
                     pr_esistenti = [pr for pr in prenotazioni_raw if pr["posto_id"] == posto_admin]
                     if not pr_esistenti:
-                        st.success(f"Il **Posto {posto_admin}** è LIBERO per il {data_visiva}.")
+                        st.success(f"Il **Posto {posto_admin}** ({get_zona_evento(posto_admin)}) è LIBERO per il {data_visiva}.")
                         if st.button(f"Blocca Posto {posto_admin} ⛔", use_container_width=True):
                             supabase.table("prenotazioni").insert({
                                 "utente_id": utente_loggato["id"],
@@ -725,7 +761,7 @@ else:
                         occ = pr_esistenti[0]
                         u_info = occ.get("utenti") or {}
                         n_occ = u_info.get("username", "Occupato")
-                        st.error(f"Occupato da: **{n_occ}**")
+                        st.error(f"Occupato da: **{n_occ}** ({get_zona_evento(posto_admin)})")
                         if st.button(f"Rimuovi Prenotazione 🗑️", use_container_width=True):
                             supabase.table("prenotazioni").delete().eq("id", occ["id"]).execute()
                             st.success("Prenotazione rimossa!")
@@ -853,16 +889,26 @@ else:
             nome_evento = st.text_input("Nome Evento:", placeholder="Es. Convegno Viticoltura / Open Day")
         with col_e2:
             note_evento = st.text_area("Note Generali Evento:", placeholder="Es. Riservato Relatori / Ospiti Esterni")
-            blocchi_selezionati = st.multiselect("Blocchi Parcheggio da Bloccare:", options=["TUTTI", "Bassa", "Alta", "Piazzale", "Staff", "Docenti", "Alloggi"], default=["TUTTI"])
+            opzioni_blocchi = ["TUTTI", "Zona Gialla", "Zona Verde", "Zona Rossa", "Zona Blu", "Zona Grigia", "Bassa", "Alta", "Piazzale", "Staff", "Docenti", "Alloggi"]
+            blocchi_selezionati = st.multiselect("Blocchi / Zone Evento da Bloccare:", options=opzioni_blocchi, default=["TUTTI"])
 
-        posti_interessati = list(POSTI.keys()) if "TUTTI" in blocchi_selezionati else [p for b in blocchi_selezionati if b in POSTI_PER_ZONA for p in POSTI_PER_ZONA[b]]
+        posti_interessati = []
+        if "TUTTI" in blocchi_selezionati:
+            posti_interessati = list(POSTI.keys())
+        else:
+            for p_id in POSTI.keys():
+                pref = p_id.split("-")[0]
+                z_ev = get_zona_evento(p_id)
+                if pref in blocchi_selezionati or z_ev in blocchi_selezionati:
+                    posti_interessati.append(p_id)
+
         dettagli_posti = {}
         if posti_interessati:
             with st.expander("✏️ Personalizza indicazione per singoli posti (in fase di creazione)"):
                 cols_ev = st.columns(3)
                 for idx, p_id in enumerate(posti_interessati):
                     c_target = cols_ev[idx % 3]
-                    txt_p = c_target.text_input(f"Posto {p_id}:", key=f"inp_ev_{p_id}", placeholder="Es. Prof. Rossi")
+                    txt_p = c_target.text_input(f"Posto {p_id} ({get_zona_evento(p_id)}):", key=f"inp_ev_{p_id}", placeholder="Es. Prof. Rossi")
                     if txt_p.strip():
                         dettagli_posti[p_id] = txt_p.strip()
 
@@ -870,7 +916,7 @@ else:
             if not nome_evento.strip():
                 st.error("Inserisci un nome per l'evento.")
             elif not blocchi_selezionati:
-                st.error("Seleziona almeno un blocco di parcheggi.")
+                st.error("Seleziona almeno un blocco o zona di parcheggi.")
             else:
                 str_blocchi = "TUTTI" if "TUTTI" in blocchi_selezionati else ",".join(blocchi_selezionati)
                 supabase.table("eventi").insert({
@@ -903,10 +949,9 @@ else:
                         st.success("Evento eliminato!")
                         st.rerun()
                     
-                    # DOWNLOAD REPORT EXCEL PER EVENTO (REQUISITO 1)
                     buf_ev = genera_excel_evento(ev, POSTI_PER_ZONA)
                     st.download_button(
-                        label=f"📥 Scarica Report Evento '{ev_nm}' (Excel per Stampa)",
+                        label=f"📥 Scarica Report Evento '{ev_nm}' (Excel con Zone Evento)",
                         data=buf_ev,
                         file_name=f"evento_{ev_nm.replace(' ', '_')}_{ev_dt}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -914,7 +959,6 @@ else:
                         use_container_width=True
                     )
                     
-                    # SEZIONE MODIFICA POSTI
                     with st.expander(f"✏️ Modifica Dettagli e Nomi Posti: {ev_nm}"):
                         with st.form(key=f"form_mod_ev_{ev_id}"):
                             m_nome = st.text_input("Nome Evento:", value=ev_nm)
@@ -922,7 +966,7 @@ else:
                             
                             curr_b = ev.get("blocchi", "TUTTI")
                             b_def = [b.strip() for b in curr_b.split(",")] if isinstance(curr_b, str) else (curr_b if isinstance(curr_b, list) else ["TUTTI"])
-                            m_blocchi = st.multiselect("Blocchi Parcheggio:", options=["TUTTI", "Bassa", "Alta", "Piazzale", "Staff", "Docenti", "Alloggi"], default=b_def)
+                            m_blocchi = st.multiselect("Blocchi / Zone Parcheggio:", options=opzioni_blocchi, default=b_def)
                             
                             det_p_curr = ev.get("dettagli_posti") or {}
                             if isinstance(det_p_curr, str):
@@ -934,13 +978,21 @@ else:
                                 det_p_curr = {}
 
                             st.caption("Personalizza testo/ospite assegnato a ciascun posto auto:")
-                            imp_spots = list(POSTI.keys()) if "TUTTI" in m_blocchi else [p for b in m_blocchi if b in POSTI_PER_ZONA for p in POSTI_PER_ZONA[b]]
+                            imp_spots = []
+                            if "TUTTI" in m_blocchi:
+                                imp_spots = list(POSTI.keys())
+                            else:
+                                for p_k in POSTI.keys():
+                                    pref_k = p_k.split("-")[0]
+                                    z_ev_k = get_zona_evento(p_k)
+                                    if pref_k in m_blocchi or z_ev_k in m_blocchi:
+                                        imp_spots.append(p_k)
                             
                             cols_m = st.columns(2)
                             m_dettagli = {}
                             for idx, p_k in enumerate(imp_spots):
                                 c_target = cols_m[idx % 2]
-                                val_input = c_target.text_input(f"Posto {p_k}:", value=det_p_curr.get(p_k, ""), key=f"inp_mod_{ev_id}_{p_k}")
+                                val_input = c_target.text_input(f"Posto {p_k} ({get_zona_evento(p_k)}):", value=det_p_curr.get(p_k, ""), key=f"inp_mod_{ev_id}_{p_k}")
                                 if val_input.strip():
                                     m_dettagli[p_k] = val_input.strip()
 
@@ -1028,6 +1080,7 @@ else:
                             "Data": "PERMANENTE" if p_data_raw == DATA_PERMANENTE else p_data_raw,
                             "Codice Mappa": cod_abbr,
                             "Posto": p_id,
+                            "Zona Evento": get_zona_evento(p_id),
                             "Conducente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
                             "Gruppo": u_info.get("gruppo", "-") if p_user.lower() != 'admin' else "-",
                             "Targa": u_info.get("targa", "-") if p_user.lower() != 'admin' else "-",

@@ -46,7 +46,6 @@ MAPPA_GIORNI_SETTIMANA = {
     "Domenica": 6
 }
 
-# Posti per zona (Staff portato a 24 posti)
 TOTALE_POSTI_STUDENTI = 15 + 20 + 17  # 52 Posti Studenti
 DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse
 
@@ -64,7 +63,6 @@ for lista in POSTI_PER_ZONA.values():
     for p in lista:
         POSTI[p] = {}
 
-# Mappatura prefissi abbreviazioni per i report Excel
 PREFIX_MAP = {
     "Bassa": "B",
     "Alta": "A",
@@ -76,14 +74,6 @@ PREFIX_MAP = {
 
 # --- FUNZIONE LOGICA MAPPAZIONE ZONE EVENTO ---
 def get_zona_evento(posto_id):
-    """
-    Ritorna la Zona Evento associata al posto auto:
-    - Zona Gialla: Staff 1-11, Staff 23, Staff 24 + tutta Bassa
-    - Zona Verde: Tutto Piazzale + tutto Docenti + Staff 12-17
-    - Zona Rossa: Tutta Alta
-    - Zona Blu: Tutta Alloggi
-    - Zona Grigia: Restanti Staff (18-22)
-    """
     if not posto_id:
         return "-"
     parts = posto_id.split("-")
@@ -488,52 +478,68 @@ for p in prenotazioni_raw:
         u_id = p.get("utente_id")
         info_u = p.get("utenti") or {}
         u_grp = info_u.get("gruppo", "")
-        u_name = info_u.get("username", "Occupato")
+        u_name = info_u.get("username", "")
         u_targa = info_u.get("targa", "-")
+        p_turno = str(p.get("turno", ""))
         
-        pass_ids, pass_names = parse_passengers(p.get("turno", ""))
+        pass_ids, pass_names = parse_passengers(p_turno)
         
-        is_own_booking = (u_id == utente_loggato.get("id"))
-        is_user_passenger = (utente_loggato.get("id") in pass_ids)
-        is_my_car = is_own_booking or is_user_passenger
-        
-        is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
-        is_alloggi_spot = str(p_id).startswith("Alloggi") or check_is_alloggi(info_u)
+        # Riconoscimento posti bloccati dall'Admin
+        is_admin_block = (u_id is None) or (u_name.lower() == "admin") or (p_turno == "BLOCCATO")
 
-        if is_student:
-            if is_my_car:
+        if is_admin_block:
+            prenotazioni_visibili[p_id] = {
+                "id_prenotazione": p.get("id"),
+                "utente_id": None,
+                "username": "BLOCCATO (Admin)",
+                "targa": "-",
+                "gruppo": "RISERVATO",
+                "turno": "BLOCCATO",
+                "is_mine": False,
+                "zona_evento": get_zona_evento(p_id)
+            }
+        else:
+            is_own_booking = (u_id == utente_loggato.get("id"))
+            is_user_passenger = (utente_loggato.get("id") in pass_ids)
+            is_my_car = is_own_booking or is_user_passenger
+            
+            is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
+            is_alloggi_spot = str(p_id).startswith("Alloggi") or check_is_alloggi(info_u)
+
+            if is_student:
+                if is_my_car:
+                    username_disp = u_name
+                    targa_disp = u_targa
+                    pass_disp = ", ".join(pass_names) if pass_names else "-"
+                elif u_grp == gruppo_utente:
+                    username_disp = u_name
+                    targa_disp = "-"
+                    pass_disp = ", ".join(pass_names) if pass_names else "-"
+                else:
+                    username_disp = "Occupato"
+                    targa_disp = "-"
+                    pass_disp = "-"
+            elif is_staff_spot and not is_staff_or_admin:
+                username_disp = "Staff"
+                targa_disp = "-"
+                pass_disp = "-"
+            else:
                 username_disp = u_name
                 targa_disp = u_targa
                 pass_disp = ", ".join(pass_names) if pass_names else "-"
-            elif u_grp == gruppo_utente:
-                username_disp = u_name
-                targa_disp = "-"
-                pass_disp = ", ".join(pass_names) if pass_names else "-"
-            else:
-                username_disp = "Occupato"
-                targa_disp = "-"
-                pass_disp = "-"
-        elif is_staff_spot and not is_staff_or_admin:
-            username_disp = "Staff"
-            targa_disp = "-"
-            pass_disp = "-"
-        else:
-            username_disp = u_name
-            targa_disp = u_targa
-            pass_disp = ", ".join(pass_names) if pass_names else "-"
 
-        prenotazioni_visibili[p_id] = {
-            "id_prenotazione": p.get("id"),
-            "utente_id": u_id,
-            "username": username_disp,
-            "targa": targa_disp,
-            "gruppo": u_grp if (not is_student or u_grp == gruppo_utente or is_my_car) else "Altro Corso",
-            "turno": "TUTTO_IL_GIORNO",
-            "is_mine": is_my_car,
-            "is_alloggi": is_alloggi_spot,
-            "passeggeri": pass_disp,
-            "zona_evento": get_zona_evento(p_id)
-        }
+            prenotazioni_visibili[p_id] = {
+                "id_prenotazione": p.get("id"),
+                "utente_id": u_id,
+                "username": username_disp,
+                "targa": targa_disp,
+                "gruppo": u_grp if (not is_student or u_grp == gruppo_utente or is_my_car) else "Altro Corso",
+                "turno": "TUTTO_IL_GIORNO",
+                "is_mine": is_my_car,
+                "is_alloggi": is_alloggi_spot,
+                "passeggeri": pass_disp,
+                "zona_evento": get_zona_evento(p_id)
+            }
 
 if is_student:
     zone_non_studenti = POSTI_PER_ZONA["Staff"] + POSTI_PER_ZONA["Docenti"] + POSTI_PER_ZONA["Alloggi"]
@@ -731,7 +737,7 @@ else:
         "📋 Report & Quote"
     ])
     
-    # TAB 1: GESTIONE INDIVIDUALE POSTI & SPOSTAMENTI
+    # TAB 1: GESTIONE INDIVIDUALE POSTI & SPOSTAMENTI (CORRETTA LOGICA BLOCCO ADMIN)
     with tab1:
         colA, colB = st.columns(2)
         with colA:
@@ -747,34 +753,70 @@ else:
                     if not pr_esistenti:
                         st.success(f"Il **Posto {posto_admin}** ({get_zona_evento(posto_admin)}) è LIBERO per il {data_visiva}.")
                         if st.button(f"Blocca Posto {posto_admin} ⛔", use_container_width=True):
-                            supabase.table("prenotazioni").insert({
-                                "utente_id": utente_loggato["id"],
-                                "data": data_str,
-                                "posto_id": posto_admin,
-                                "turno": "TUTTO_IL_GIORNO"
-                            }).execute()
-                            st.success("Posto bloccato!")
-                            st.rerun()
+                            try:
+                                # Inserimento BLOCCO SENZA LEGARE L'ID DELL'ADMIN
+                                supabase.table("prenotazioni").insert({
+                                    "utente_id": None,
+                                    "data": data_str,
+                                    "posto_id": posto_admin,
+                                    "turno": "BLOCCATO"
+                                }).execute()
+                                st.success(f"Posto {posto_admin} bloccato con successo!")
+                                st.rerun()
+                            except Exception as e_block:
+                                # Fallback se utente_id sul DB non accetta NULL
+                                try:
+                                    supabase.table("prenotazioni").insert({
+                                        "utente_id": utente_loggato["id"],
+                                        "data": data_str,
+                                        "posto_id": posto_admin,
+                                        "turno": "BLOCCATO"
+                                    }).execute()
+                                    st.success(f"Posto {posto_admin} bloccato!")
+                                    st.rerun()
+                                except Exception as ex_inner:
+                                    st.error(f"❌ Impossibile bloccare il posto: {ex_inner}")
                     else:
                         occ = pr_esistenti[0]
                         u_info = occ.get("utenti") or {}
-                        n_occ = u_info.get("username", "Occupato")
-                        st.error(f"Occupato da: **{n_occ}** ({get_zona_evento(posto_admin)})")
-                        if st.button(f"Rimuovi Prenotazione 🗑️", use_container_width=True):
-                            supabase.table("prenotazioni").delete().eq("id", occ["id"]).execute()
-                            st.success("Prenotazione rimossa!")
-                            st.rerun()
+                        u_id_occ = occ.get("utente_id")
+                        n_occ = u_info.get("username", "")
+                        t_occ = str(occ.get("turno", ""))
+                        
+                        is_block = (u_id_occ is None) or (n_occ.lower() == "admin") or (t_occ == "BLOCCATO")
+                        
+                        if is_block:
+                            st.warning(f"⛔ Posto **{posto_admin}** **BLOCCATO DA ADMIN** ({get_zona_evento(posto_admin)})")
+                            if st.button(f"Sblocca Posto {posto_admin} 🔓", use_container_width=True):
+                                supabase.table("prenotazioni").delete().eq("id", occ["id"]).execute()
+                                st.success(f"Posto {posto_admin} sbloccato!")
+                                st.rerun()
+                        else:
+                            st.error(f"Occupato da: **{n_occ}** ({get_zona_evento(posto_admin)}) - Targa: `{u_info.get('targa', '-')}`")
+                            if st.button(f"Rimuovi Prenotazione 🗑️", use_container_width=True):
+                                supabase.table("prenotazioni").delete().eq("id", occ["id"]).execute()
+                                st.success("Prenotazione rimossa!")
+                                st.rerun()
 
         st.divider()
         st.write("### ↔️ Sposta una Prenotazione Esistente")
         prenotazioni_spostabili = [pr for pr in prenotazioni_raw if pr.get("posto_id")]
         if prenotazioni_spostabili:
+            def label_spostamento(x):
+                u_inf = x.get("utenti") or {}
+                u_nm = u_inf.get("username", "")
+                u_id_val = x.get("utente_id")
+                p_tr = str(x.get("turno", ""))
+                if u_id_val is None or u_nm.lower() == "admin" or p_tr == "BLOCCATO":
+                    return f"Posto {x['posto_id']} - BLOCCATO DA ADMIN"
+                return f"Posto {x['posto_id']} - {u_nm}"
+
             col_mv1, col_mv2, col_mv3 = st.columns(3)
             with col_mv1:
                 p_sposta = st.selectbox(
                     "Seleziona Prenotazione da spostare:",
                     options=prenotazioni_spostabili,
-                    format_func=lambda x: f"Posto {x['posto_id']} - {(x.get('utenti') or {}).get('username', 'Occupato')}",
+                    format_func=label_spostamento,
                     key="sb_mv_p"
                 )
             with col_mv2:
@@ -787,7 +829,7 @@ else:
                 if st.button("Sposta Prenotazione 🔄", use_container_width=True):
                     if nuovo_posto_target:
                         supabase.table("prenotazioni").update({"posto_id": nuovo_posto_target}).eq("id", p_sposta["id"]).execute()
-                        st.success(f"Prenotazione spostata dal posto {p_sposta['posto_id']} al posto {nuovo_posto_target}!")
+                        st.success(f"Spostato con successo al posto {nuovo_posto_target}!")
                         st.rerun()
                     else:
                         st.error("Nessun posto libero disponibile.")
@@ -1065,23 +1107,26 @@ else:
                     for item in risposta_t.data:
                         u_info = item.get("utenti") or {}
                         p_data_raw = str(item.get("data", ""))
-                        p_user = u_info.get("username", "Occupato")
+                        p_user = u_info.get("username", "")
                         p_id = item.get("posto_id", "")
+                        p_turno = str(item.get("turno", ""))
                         
                         parts = p_id.split("-") if p_id else ["", ""]
                         cod_abbr = f"{PREFIX_MAP.get(parts[0], parts[0][0])}{parts[1]}" if len(parts) > 1 else p_id
 
-                        p_ids, p_names = parse_passengers(item.get("turno", ""))
+                        p_ids, p_names = parse_passengers(p_turno)
                         pass_txt = ", ".join(p_names) if p_names else "-"
+
+                        is_adm_blk = (item.get("utente_id") is None) or (p_user.lower() == 'admin') or (p_turno == 'BLOCCATO')
 
                         lista_excel.append({
                             "Data": "PERMANENTE" if p_data_raw == DATA_PERMANENTE else p_data_raw,
                             "Codice Mappa": cod_abbr,
                             "Posto": p_id,
                             "Zona Evento": get_zona_evento(p_id),
-                            "Conducente": "BLOCCATO (Admin)" if p_user.lower() == 'admin' else p_user,
-                            "Gruppo": u_info.get("gruppo", "-") if p_user.lower() != 'admin' else "-",
-                            "Targa": u_info.get("targa", "-") if p_user.lower() != 'admin' else "-",
+                            "Conducente": "BLOCCATO (Admin)" if is_adm_blk else p_user,
+                            "Gruppo": "-" if is_adm_blk else u_info.get("gruppo", "-"),
+                            "Targa": "-" if is_adm_blk else u_info.get("targa", "-"),
                             "Passeggeri in Auto": pass_txt
                         })
                     

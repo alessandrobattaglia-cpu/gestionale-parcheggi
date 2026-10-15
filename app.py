@@ -46,7 +46,7 @@ MAPPA_GIORNI_SETTIMANA = {
     "Domenica": 6
 }
 
-# Posti per zona
+# Posti per zona (Staff portato a 24 posti)
 TOTALE_POSTI_STUDENTI = 15 + 20 + 17  # 52 Posti Studenti
 DATA_PERMANENTE = "2099-12-31"        # Data usata per assegnazioni fisse
 
@@ -54,7 +54,7 @@ POSTI_PER_ZONA = {
     "Bassa": [f"Bassa-{i}" for i in range(1, 16)],
     "Alta": [f"Alta-{i}" for i in range(1, 21)],
     "Piazzale": [f"Piazzale-{i}" for i in range(1, 18)],
-    "Staff": [f"Staff-{i}" for i in range(1, 24)],
+    "Staff": [f"Staff-{i}" for i in range(1, 25)],       # 24 posti Staff
     "Docenti": [f"Docenti-{i}" for i in range(1, 8)],
     "Alloggi": [f"Alloggi-{i}" for i in range(1, 14)]
 }
@@ -78,11 +78,11 @@ PREFIX_MAP = {
 def get_zona_evento(posto_id):
     """
     Ritorna la Zona Evento associata al posto auto:
-    - Zona Gialla: Staff 1-11 + tutta Bassa
+    - Zona Gialla: Staff 1-11, Staff 23, Staff 24 + tutta Bassa
     - Zona Verde: Tutto Piazzale + tutto Docenti + Staff 12-17
     - Zona Rossa: Tutta Alta
     - Zona Blu: Tutta Alloggi
-    - Zona Grigia: I restanti (Staff 18-23)
+    - Zona Grigia: Restanti Staff (18-22)
     """
     if not posto_id:
         return "-"
@@ -99,7 +99,7 @@ def get_zona_evento(posto_id):
     elif pref == "Alloggi":
         return "Zona Blu"
     elif pref == "Staff":
-        if 1 <= num <= 11:
+        if (1 <= num <= 11) or num in [23, 24]:
             return "Zona Gialla"
         elif 12 <= num <= 17:
             return "Zona Verde"
@@ -440,7 +440,7 @@ with st.sidebar.expander("🔑 Modifica Password"):
         if old_pwd != utente_loggato.get("password"):
             st.error("❌ La password attuale non è corretta.")
         elif not new_pwd or new_pwd != conf_pwd:
-            st.error("❌ Le nuove password non совпадают o sono vuote.")
+            st.error("❌ Le nuove password non coincidono o sono vuote.")
         else:
             supabase.table("utenti").update({"password": new_pwd}).eq("id", utente_loggato["id"]).execute()
             st.session_state["utente_autenticato"]["password"] = new_pwd
@@ -479,11 +479,9 @@ except Exception:
 posti_bloccati_eventi = get_posti_bloccati_evento(data_str, is_staff_or_admin=is_staff_or_admin)
 prenotazioni_visibili = {}
 
-# Inserisci blocchi eventi
 for p_id, info_ev in posti_bloccati_eventi.items():
     prenotazioni_visibili[p_id] = info_ev
 
-# Inserisci prenotazioni reali DB
 for p in prenotazioni_raw:
     p_id = p.get("posto_id")
     if p_id and p_id not in posti_bloccati_eventi:

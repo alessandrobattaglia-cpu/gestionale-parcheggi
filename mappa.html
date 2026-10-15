@@ -85,7 +85,7 @@
     .occupied             { fill: #e74c3c !important; opacity: 0.95; }  /* ROSSO - Occupato */
     .blocked              { fill: #7f8c8d !important; opacity: 0.95; }  /* GRIGIO - Bloccato / Riservato Zona */
 
-    /* REQUISITO 1: Classi Colore Zone Evento */
+    /* Classi Colore Zone Evento */
     .event-zone-gialla { fill: #f1c40f !important; stroke: #d4ac0d; stroke-width: 2px; opacity: 0.95; } /* GIALLO */
     .event-zone-verde  { fill: #2ecc71 !important; stroke: #1e8449; stroke-width: 2px; opacity: 0.95; } /* VERDE */
     .event-zone-rossa  { fill: #e74c3c !important; stroke: #922b21; stroke-width: 2px; opacity: 0.95; } /* ROSSO */
@@ -233,7 +233,7 @@
         <rect class="spot zone-verde" x="415" y="590" width="18" height="18" data-id="Piazzale-17" />
       </g>
 
-      <!-- 4. ZONA STAFF - Azzurro (23 Posti) -->
+      <!-- 4. ZONA STAFF - Azzurro (24 Posti) -->
       <g id="zona-staff">
         <rect class="spot zone-staff" x="285" y="250" width="18" height="18" data-id="Staff-1" />
         <rect class="spot zone-staff" x="300" y="250" width="18" height="18" data-id="Staff-2" />
@@ -258,7 +258,7 @@
         <rect class="spot zone-staff" x="605" y="810" width="18" height="18" data-id="Staff-21" />
         <rect class="spot zone-staff" x="620" y="810" width="18" height="18" data-id="Staff-22" />
         <rect class="spot zone-staff" x="835" y="70" width="18" height="18" data-id="Staff-23" />
-        <rect class="spot zone-verde" x="785" y="85" width="18" height="18" data-id="Staff-24" />
+        <rect class="spot zone-staff" x="855" y="70" width="18" height="18" data-id="Staff-24" />
       </g>
 
       <!-- 5. ZONA DOCENTI - Giallo/Oro (7 Posti) -->
@@ -329,7 +329,6 @@
           spot.classList.add('my-spot');
         } 
         else if (uGrp === "EVENTO" || info.username.startsWith("🎉") || info.is_event) {
-          // Assegna colore specifico per ciascuna Zona Evento
           if (zEv === "Zona Gialla") spot.classList.add('event-zone-gialla');
           else if (zEv === "Zona Verde") spot.classList.add('event-zone-verde');
           else if (zEv === "Zona Rossa") spot.classList.add('event-zone-rossa');
@@ -391,7 +390,6 @@
       });
     });
 
-    // Posiziona il Fumetto 'IL TUO POSTO È QUI!' sopra il posto giallo
     const mySpotElem = document.querySelector('.spot.my-spot');
     if (mySpotElem) {
       const mapContainer = document.getElementById('map-container');
@@ -415,7 +413,6 @@
       window.addEventListener('resize', positionBadge);
     }
 
-    // Scarica Mappa PNG
     function scaricaMappaPNG() {
       const container = document.getElementById('map-container');
       if (!container) return;

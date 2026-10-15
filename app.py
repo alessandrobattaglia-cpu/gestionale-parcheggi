@@ -147,7 +147,7 @@ def is_booking_open_for_student(data_target, now_dt=None):
         now_dt = dt.now()
     
     target_monday = data_target - datetime.timedelta(days=data_target.weekday())
-    opening_dt = dt.combine(target_monday - datetime.timedelta(days=3), time(18, 0))
+    opening_dt = dt.combine(target_monday - datetime.timedelta(days=3), time(9, 0))
     
     if now_dt >= opening_dt:
         return True, opening_dt
@@ -627,7 +627,7 @@ if not is_admin_or_segreteria:
             is_open, open_datetime = is_booking_open_for_student(data_scelta)
             if not is_open:
                 st.warning(f"⏳ **Prenotazioni non ancora aperte per il giorno {data_visiva}!**")
-                st.info(f"Le prenotazioni per la settimana del **{data_scelta.strftime('%d/%m/%Y')}** si apriranno **Venerdì {open_datetime.strftime('%d/%m/%Y')} alle ore 18:00**.")
+                st.info(f"Le prenotazioni per la settimana del **{data_scelta.strftime('%d/%m/%Y')}** si apriranno **Venerdì {open_datetime.strftime('%d/%m/%Y')} alle ore 9:00**.")
                 st.stop()
 
         if not targa_valida:

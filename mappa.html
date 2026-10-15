@@ -224,13 +224,13 @@
         <rect class="spot zone-verde" x="545" y="575" width="18" height="18" data-id="Piazzale-8" />
         <rect class="spot zone-verde" x="530" y="575" width="18" height="18" data-id="Piazzale-9" />
         <rect class="spot zone-verde" x="515" y="575" width="18" height="18" data-id="Piazzale-10" />
-        <rect class="spot zone-verde" x="415" y="530" width="18" height="18" data-id="Piazzale-11" />
-        <rect class="spot zone-verde" x="415" y="545" width="18" height="18" data-id="Piazzale-12" />
-        <rect class="spot zone-verde" x="415" y="560" width="18" height="18" data-id="Piazzale-13" />
-        <rect class="spot zone-verde" x="415" y="575" width="18" height="18" data-id="Piazzale-14" />
-        <rect class="spot zone-verde" x="415" y="590" width="18" height="18" data-id="Piazzale-15" />
-        <rect class="spot zone-verde" x="415" y="605" width="18" height="18" data-id="Piazzale-16" />
-        <rect class="spot zone-verde" x="415" y="620" width="18" height="18" data-id="Piazzale-17" />
+        <rect class="spot zone-verde" x="415" y="500" width="18" height="18" data-id="Piazzale-11" />
+        <rect class="spot zone-verde" x="415" y="515" width="18" height="18" data-id="Piazzale-12" />
+        <rect class="spot zone-verde" x="415" y="530" width="18" height="18" data-id="Piazzale-13" />
+        <rect class="spot zone-verde" x="415" y="545" width="18" height="18" data-id="Piazzale-14" />
+        <rect class="spot zone-verde" x="415" y="560" width="18" height="18" data-id="Piazzale-15" />
+        <rect class="spot zone-verde" x="415" y="575" width="18" height="18" data-id="Piazzale-16" />
+        <rect class="spot zone-verde" x="415" y="590" width="18" height="18" data-id="Piazzale-17" />
       </g>
 
       <!-- 4. ZONA STAFF - Azzurro (24 Posti) -->
@@ -258,7 +258,7 @@
         <rect class="spot zone-staff" x="605" y="810" width="18" height="18" data-id="Staff-21" />
         <rect class="spot zone-staff" x="620" y="810" width="18" height="18" data-id="Staff-22" />
         <rect class="spot zone-staff" x="835" y="70" width="18" height="18" data-id="Staff-23" />
-        <rect class="spot zone-staff" x="785" y="85" width="18" height="18" data-id="Staff-24" />
+        <rect class="spot zone-staff" x="855" y="70" width="18" height="18" data-id="Staff-24" />
       </g>
 
       <!-- 5. ZONA DOCENTI - Giallo/Oro (7 Posti) -->
@@ -268,8 +268,8 @@
         <rect class="spot zone-docenti" x="415" y="420" width="18" height="18" data-id="Docenti-3" />
         <rect class="spot zone-docenti" x="415" y="435" width="18" height="18" data-id="Docenti-4" />
         <rect class="spot zone-docenti" x="415" y="450" width="18" height="18" data-id="Docenti-5" />
-        <rect class="spot zone-docenti" x="415" y="500" width="18" height="18" data-id="Docenti-6" />
-        <rect class="spot zone-docenti" x="415" y="515" width="18" height="18" data-id="Docenti-7" />
+        <rect class="spot zone-docenti" x="415" y="605" width="18" height="18" data-id="Docenti-6" />
+        <rect class="spot zone-docenti" x="415" y="620" width="18" height="18" data-id="Docenti-7" />
       </g>
 
       <!-- 6. ZONA ALLOGGI - Verde Scuro (13 Posti) -->
@@ -339,7 +339,7 @@
             else spot.classList.add('event-spot');
           }
         } 
-        else if (uName === 'admin' || uGrp === 'RISERVATO' || info.username === 'Riservato Zona') {
+        else if (uName === 'admin' || uName.includes('bloccato') || uGrp === 'RISERVATO' || info.username === 'Riservato Zona') {
           spot.classList.add('blocked');
         } 
         else if (info.is_alloggi || uGrp.startsWith("Alloggi")) {
@@ -359,8 +359,8 @@
           if (info.is_mine) {
             text += `📍 IL TUO POSTO PRENOTATO!\n👤 Conducente: ${uName}`;
             if (info.targa && info.targa !== '-') text += `\n🏎️ Targa: ${info.targa}`;
-          } else if (uName.toLowerCase() === 'admin') {
-            text += `⛔ STATO: NON DISPONIBILE`;
+          } else if (uName.includes('bloccato') || uName.toLowerCase() === 'admin') {
+            text += `⛔ STATO: BLOCCATO DA ADMIN`;
           } else if (uName === 'Riservato Zona' || uGrp === 'RISERVATO') {
             text += `🔒 STATO: RISERVATO ZONA`;
           } else if (uGrp === 'EVENTO' || uName.startsWith('🎉') || info.is_event) {

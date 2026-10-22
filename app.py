@@ -46,14 +46,14 @@ MAPPA_GIORNI_SETTIMANA = {
     "Domenica": 6
 }
 
-# Posti per zona
-TOTALE_POSTI_STUDENTI = 15 + 17 + 17  # 49 Posti Studenti (Bassa 15 + Alta 17 + Piazzale 17)
+# Posti per zona (Sequenza Studenti: Bassa 15 -> Piazzale 17 -> Alta 17)
+TOTALE_POSTI_STUDENTI = 15 + 17 + 17  # 49 Posti Studenti
 DATA_PERMANENTE = "2099-12-31"
 
 POSTI_PER_ZONA = {
     "Bassa": [f"Bassa-{i}" for i in range(1, 16)],
-    "Alta": [f"Alta-{i}" for i in range(1, 18)],      # 👈 Portato a 17 posti (range da 1 a 18)
     "Piazzale": [f"Piazzale-{i}" for i in range(1, 18)],
+    "Alta": [f"Alta-{i}" for i in range(1, 18)],
     "Staff": [f"Staff-{i}" for i in range(1, 25)],
     "Docenti": [f"Docenti-{i}" for i in range(1, 8)],
     "Alloggi": [f"Alloggi-{i}" for i in range(1, 14)]
@@ -72,6 +72,21 @@ PREFIX_MAP = {
     "Docenti": "D",
     "Alloggi": "AL"
 }
+
+def get_codice_mappa(posto_id):
+    if not posto_id or "-" not in posto_id:
+        return posto_id
+    parts = posto_id.split("-")
+    pref = parts[0]
+    num = int(parts[1]) if parts[1].isdigit() else 0
+    if pref == "Bassa":
+        return str(num)                # 1..15
+    elif pref == "Piazzale":
+        return str(15 + num)           # 16..32
+    elif pref == "Alta":
+        return str(15 + 17 + num)      # 33..49
+    else:
+        return f"{PREFIX_MAP.get(pref, pref[0])}{num}"
 
 # --- FUNZIONE LOGICA MAPPAZIONE ZONE EVENTO ---
 def get_zona_evento(posto_id):
@@ -176,8 +191,7 @@ def genera_excel_evento(ev, POSTI_PER_ZONA):
         for p_id in lista_p:
             z_ev = get_zona_evento(p_id)
             if "TUTTI" in blocchi_list or zona_p in blocchi_list or z_ev in blocchi_list:
-                parts = p_id.split("-")
-                cod_abbr = f"{PREFIX_MAP.get(parts[0], parts[0][0])}{parts[1]}"
+                cod_abbr = get_codice_mappa(p_id)
                 ospite = det_posti.get(p_id, "").strip()
                 if not ospite:
                     ospite = ev.get("note") if ev.get("note") else "Riservato Evento"
@@ -477,10 +491,16 @@ for p in prenotazioni_raw:
     p_id = p.get("posto_id")
     if p_id and p_id not in posti_bloccati_eventi:
         u_id = p.get("utente_id")
+        
         info_u = p.get("utenti") or {}
+        if isinstance(info_u, list) and len(info_u) > 0:
+            info_u = info_u[0]
+        elif not isinstance(info_u, dict):
+            info_u = {}
+
         u_grp = info_u.get("gruppo", "")
         u_name = info_u.get("username", "")
-        u_targa = info_u.get("targa", "-")
+        u_targa = info_u.get("targa") or "-"
         p_turno = str(p.get("turno", ""))
         
         pass_ids, pass_names = parse_passengers(p_turno)
@@ -683,6 +703,10 @@ if not is_admin_or_segreteria:
             occupati_gruppo = 0
             for pr in prenotazioni_raw:
                 u_inf = pr.get("utenti") or {}
+                if isinstance(u_inf, list) and len(u_inf) > 0:
+                    u_inf = u_inf[0]
+                elif not isinstance(u_inf, dict):
+                    u_inf = {}
                 u_grp = u_inf.get("gruppo")
                 if u_grp == gruppo_utente and not check_is_alloggi(u_inf):
                     occupati_gruppo += 1
@@ -705,7 +729,8 @@ if not is_admin_or_segreteria:
                     if not selected_passengers:
                         st.error("❌ **ATTENZIONE**: Devi selezionare **almeno un passeggero** che viaggia con te per poter prenotare (regola carpooling)!")
                     else:
-                        candidati_studenti = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Alta"] + POSTI_PER_ZONA["Piazzale"])
+                        # 4. ASSEGNAZIONE PRIMA BASSA -> PIAZZALE -> ALTA
+                        candidati_studenti = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Piazzale"] + POSTI_PER_ZONA["Alta"])
                         
                         if candidati_studenti:
                             p_ids = [u["id"] for u in selected_passengers]
@@ -738,7 +763,7 @@ else:
         "📋 Report & Quote"
     ])
     
-    # TAB 1: GESTIONE INDIVIDUALE POSTI & SPOSTAMENTI (CORRETTA LOGICA BLOCCO ADMIN)
+    # TAB 1: GESTIONE INDIVIDUALE POSTI & SPOSTAMENTI
     with tab1:
         colA, colB = st.columns(2)
         with colA:
@@ -755,7 +780,6 @@ else:
                         st.success(f"Il **Posto {posto_admin}** ({get_zona_evento(posto_admin)}) è LIBERO per il {data_visiva}.")
                         if st.button(f"Blocca Posto {posto_admin} ⛔", use_container_width=True):
                             try:
-                                # Inserimento BLOCCO SENZA LEGARE L'ID DELL'ADMIN
                                 supabase.table("prenotazioni").insert({
                                     "utente_id": None,
                                     "data": data_str,
@@ -765,7 +789,6 @@ else:
                                 st.success(f"Posto {posto_admin} bloccato con successo!")
                                 st.rerun()
                             except Exception as e_block:
-                                # Fallback se utente_id sul DB non accetta NULL
                                 try:
                                     supabase.table("prenotazioni").insert({
                                         "utente_id": utente_loggato["id"],
@@ -780,6 +803,11 @@ else:
                     else:
                         occ = pr_esistenti[0]
                         u_info = occ.get("utenti") or {}
+                        if isinstance(u_info, list) and len(u_info) > 0:
+                            u_info = u_info[0]
+                        elif not isinstance(u_info, dict):
+                            u_info = {}
+
                         u_id_occ = occ.get("utente_id")
                         n_occ = u_info.get("username", "")
                         t_occ = str(occ.get("turno", ""))
@@ -793,7 +821,7 @@ else:
                                 st.success(f"Posto {posto_admin} sbloccato!")
                                 st.rerun()
                         else:
-                            st.error(f"Occupato da: **{n_occ}** ({get_zona_evento(posto_admin)}) - Targa: `{u_info.get('targa', '-')}`")
+                            st.error(f"Occupato da: **{n_occ}** ({get_zona_evento(posto_admin)}) - Targa: `{u_info.get('targa') or '-'}`")
                             if st.button(f"Rimuovi Prenotazione 🗑️", use_container_width=True):
                                 supabase.table("prenotazioni").delete().eq("id", occ["id"]).execute()
                                 st.success("Prenotazione rimossa!")
@@ -805,6 +833,10 @@ else:
         if prenotazioni_spostabili:
             def label_spostamento(x):
                 u_inf = x.get("utenti") or {}
+                if isinstance(u_inf, list) and len(u_inf) > 0:
+                    u_inf = u_inf[0]
+                elif not isinstance(u_inf, dict):
+                    u_inf = {}
                 u_nm = u_inf.get("username", "")
                 u_id_val = x.get("utente_id")
                 p_tr = str(x.get("turno", ""))
@@ -858,7 +890,7 @@ else:
                 membro_scelto = st.selectbox(
                     "Seleziona Utente (Staff / Alloggiato):",
                     options=utenti_speciali,
-                    format_func=lambda u: f"{u['username']} ({'Alloggi' if check_is_alloggi(u) else u.get('gruppo')}) - Targa: {u.get('targa', '-')}",
+                    format_func=lambda u: f"{u['username']} ({'Alloggi' if check_is_alloggi(u) else u.get('gruppo')}) - Targa: {u.get('targa') or '-'}",
                     key="sb_staff_member"
                 )
                 modalita_assegnazione = st.radio("Modalità di Assegnazione:", ["Giorni Ricorrenti", "Singola Data", "Permanente (Fissa)"], key="radio_mod_staff")
@@ -907,11 +939,16 @@ else:
                 if res_all_s.data:
                     for r in res_all_s.data:
                         u_i = r.get("utenti") or {}
+                        if isinstance(u_i, list) and len(u_i) > 0:
+                            u_i = u_i[0]
+                        elif not isinstance(u_i, dict):
+                            u_i = {}
+
                         dt_r = r.get("data")
                         p_r = r.get("posto_id")
                         if str(p_r).startswith("Staff") or str(p_r).startswith("Alloggi") or u_i.get("gruppo") in ["Staff", "Segreteria"]:
                             col_r1, col_r2, col_r3, col_r4 = st.columns([3, 2, 2, 1])
-                            col_r1.write(f"👤 **{u_i.get('username')}** ({u_i.get('targa', '-')})")
+                            col_r1.write(f"👤 **{u_i.get('username')}** ({u_i.get('targa') or '-'})")
                             col_r2.write(f"🅿️ Posto: **{p_r}**")
                             col_r3.write(f"📅 `{ 'PERMANENTE' if dt_r == DATA_PERMANENTE else dt_r }`")
                             if col_r4.button("❌", key=f"del_spec_{r['id']}"):
@@ -1081,15 +1118,41 @@ else:
                     st.success(f"Aggiornata presenza per {grp}!")
                     st.rerun()
 
-    # TAB 5: REPORT E QUOTE
+    # TAB 5: REPORT E QUOTE (CON QUOTA RESIDUA & FIX TARGA EXCEL)
     with tab5:
         st.write("### 📊 Quote Posti Calcolate per Oggi (Carpooling Applicato)")
-        df_quote = pd.DataFrame([{
-            "Corso": grp,
-            "Stato Oggi": "PRESENTE 🟢" if grp in corsi_presenti_oggi else "ASSENTE 🔴",
-            "Iscritti (No Alloggi)": numero_iscritti.get(grp, 0),
-            "Quota Max Auto": quote_dinamiche.get(grp, 0) if grp in corsi_presenti_oggi else 0
-        } for grp in GRUPPI_STUDENTI.keys()])
+        
+        # Calcolo dinamico auto prenotate e quote residue per ciascun corso
+        prenotazioni_oggi = [pr for pr in prenotazioni_raw if pr.get("data") == data_str]
+        
+        table_rows = []
+        for grp in GRUPPI_STUDENTI.keys():
+            is_present = grp in corsi_presenti_oggi
+            q_max = quote_dinamiche.get(grp, 0) if is_present else 0
+            
+            prenotati_grp = 0
+            for pr in prenotazioni_oggi:
+                u_inf = pr.get("utenti") or {}
+                if isinstance(u_inf, list) and len(u_inf) > 0:
+                    u_inf = u_inf[0]
+                elif not isinstance(u_inf, dict):
+                    u_inf = {}
+                
+                if u_inf.get("gruppo") == grp and not check_is_alloggi(u_inf):
+                    prenotati_grp += 1
+                    
+            q_residua = max(0, q_max - prenotati_grp) if is_present else 0
+            
+            table_rows.append({
+                "Corso": grp,
+                "Stato Oggi": "PRESENTE 🟢" if is_present else "ASSENTE 🔴",
+                "Iscritti (No Alloggi)": numero_iscritti.get(grp, 0),
+                "Quota Max Auto": q_max,
+                "Auto Prenotate": prenotati_grp,
+                "Quota Residua (Disponibili)": q_residua
+            })
+            
+        df_quote = pd.DataFrame(table_rows)
         st.dataframe(df_quote, use_container_width=True)
         
         st.divider()
@@ -1099,35 +1162,45 @@ else:
         if st.button("Genera e Scarica Report Excel 📥", use_container_width=True):
             try:
                 if "Giornaliero" in tipo_report:
-                    risposta_t = supabase.table("prenotazioni").select("data, posto_id, turno, utenti(*)").in_("data", [data_str, DATA_PERMANENTE]).execute()
+                    risposta_t = supabase.table("prenotazioni").select("data, posto_id, turno, utente_id, utenti(*)").in_("data", [data_str, DATA_PERMANENTE]).execute()
                 else:
-                    risposta_t = supabase.table("prenotazioni").select("data, posto_id, turno, utenti(*)").execute()
+                    risposta_t = supabase.table("prenotazioni").select("data, posto_id, turno, utente_id, utenti(*)").execute()
                 
                 if risposta_t.data:
                     lista_excel = []
                     for item in risposta_t.data:
                         u_info = item.get("utenti") or {}
+                        if isinstance(u_info, list) and len(u_info) > 0:
+                            u_info = u_info[0]
+                        elif not isinstance(u_info, dict):
+                            u_info = {}
+
                         p_data_raw = str(item.get("data", ""))
                         p_user = u_info.get("username", "")
+                        p_targa = u_info.get("targa") or "-"
                         p_id = item.get("posto_id", "")
                         p_turno = str(item.get("turno", ""))
                         
-                        parts = p_id.split("-") if p_id else ["", ""]
-                        cod_abbr = f"{PREFIX_MAP.get(parts[0], parts[0][0])}{parts[1]}" if len(parts) > 1 else p_id
-
+                        cod_abbr = get_codice_mappa(p_id)
                         p_ids, p_names = parse_passengers(p_turno)
                         pass_txt = ", ".join(p_names) if p_names else "-"
 
                         is_adm_blk = (item.get("utente_id") is None) or (p_user.lower() == 'admin') or (p_turno == 'BLOCCATO')
+
+                        prenotato_da_val = "BLOCCATO (Admin)" if is_adm_blk else (p_user if p_user else "-")
+                        conducente_val = "BLOCCATO (Admin)" if is_adm_blk else (p_user if p_user else "-")
+                        targa_val = "-" if is_adm_blk else p_targa
+                        gruppo_val = "-" if is_adm_blk else (u_info.get("gruppo") or "-")
 
                         lista_excel.append({
                             "Data": "PERMANENTE" if p_data_raw == DATA_PERMANENTE else p_data_raw,
                             "Codice Mappa": cod_abbr,
                             "Posto": p_id,
                             "Zona Evento": get_zona_evento(p_id),
-                            "Conducente": "BLOCCATO (Admin)" if is_adm_blk else p_user,
-                            "Gruppo": "-" if is_adm_blk else u_info.get("gruppo", "-"),
-                            "Targa": "-" if is_adm_blk else u_info.get("targa", "-"),
+                            "Prenotato da": prenotato_da_val,
+                            "Conducente": conducente_val,
+                            "Gruppo": gruppo_val,
+                            "Targa": targa_val,
                             "Passeggeri in Auto": pass_txt
                         })
                     

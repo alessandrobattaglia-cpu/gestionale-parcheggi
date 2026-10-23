@@ -605,7 +605,50 @@ try:
 except Exception as e:
     st.error(f"⚠️ Impossibile caricare la mappa: {e}")
 
-# --- GESTIONE SPECIFICA ALLOGGIATI (SOLO CONFERMA PER TUTTO IL PERIODO) ---
+# --- 7. LOGICA PRENOTAZIONI UTENTI ---
+st.divider()
+
+quote_dinamiche, corsi_presenti_oggi, numero_iscritti = calcola_quote_posti(data_scelta)
+
+def ottieni_posti_liberi_zona(prefisso_lista):
+    posti_liberi = []
+    for p in prefisso_lista:
+        if p in posti_bloccati_eventi:
+            continue
+        prenotazioni_posto = [pr for pr in prenotazioni_raw if pr["posto_id"] == p]
+        if not prenotazioni_posto:
+            posti_liberi.append(p)
+    return posti_liberi
+
+if not is_admin_or_segreteria:
+    mie_prenotazioni = [p for p in prenotazioni_raw if p["utente_id"] == utente_loggato["id"]]
+    is_passenger_check, driver_name_check, p_assigned_check = find_user_as_passenger(utente_loggato["id"], prenotazioni_raw)
+    
+    if mie_prenotazioni:
+        st.warning("🏷️ Hai la seguente prenotazione/assegnazione per questo giorno:")
+        for mp in mie_prenotazioni:
+            is_perm = mp.get("data") == DATA_PERMANENTE
+            dt_txt = "Permanente" if is_perm else data_visiva
+            st.write(f"- **Posto {mp['posto_id']}** ({dt_txt})")
+            
+            if st.button(f"Cancella Prenotazione {mp['posto_id']} ❌", key=f"del_{mp['id']}"):
+                supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
+                st.success("Prenotazione annullata!")
+                st.rerun()
+
+    elif is_passenger_check:
+        st.info(f"🚗 **Sei registrato come passeggero** nell'auto di **{driver_name_check}** (Posto **{p_assigned_check}**) per il giorno **{data_visiva}**.")
+        st.caption("Risultando già presente come passeggero, non puoi effettuare un'ulteriore prenotazione come conducente.")
+
+    else:
+        st.subheader("📌 Prenota il tuo Posto Auto")
+
+        if not targa_valida:
+            st.error("⚠️ **TARGA NON IMPOSTATA O NON VALIDA!**")
+            st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
+            st.stop()
+
+        # --- GESTIONE SPECIFICA ALLOGGIATI (SOLO CONFERMA PER TUTTO IL PERIODO) ---
         if is_alloggi_user:
             giorni_corso = GRUPPI_STUDENTI.get(gruppo_utente, {}).get("giorni_default", [])
             if giorni_corso == [0, 1, 2]:
@@ -650,7 +693,6 @@ except Exception as e:
             if selected_passengers:
                 txt_turno_alloggi += f" | PASSENGERS_IDS:{','.join(map(str, p_ids))} | PASSENGERS_NAMES:{','.join(p_names)}"
 
-            # UNICO PULSANTE: Conferma per tutto il periodo di alloggio
             if st.button("Conferma Presenza in Auto per TUTTO IL PERIODO 🗓️", use_container_width=True):
                 date_periodo = []
                 curr_d = oggi
@@ -770,7 +812,7 @@ except Exception as e:
                             ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_studenti, txt_turno)
                             
                             if ok:
-                                st.success(f"🎉 Ti è stato assigned il **Posto {esito}** con {len(selected_passengers)} passeggeri registrati!")
+                                st.success(f"🎉 Ti è stato assegnato il **Posto {esito}** con {len(selected_passengers)} passeggeri registrati!")
                                 st.rerun()
                             elif esito == "HAI_GIA_PRENOTATO":
                                 st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")

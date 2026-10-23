@@ -648,7 +648,7 @@ if not is_admin_or_segreteria:
             st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
             st.stop()
 
-        # --- GESTIONE SPECIFICA ALLOGGIATI ---
+       # --- GESTIONE SPECIFICA ALLOGGIATI (SENZA STALLO FISSO) ---
         if is_alloggi_user:
             giorni_corso = GRUPPI_STUDENTI.get(gruppo_utente, {}).get("giorni_default", [])
             if giorni_corso == [0, 1, 2]:
@@ -658,7 +658,7 @@ if not is_admin_or_segreteria:
             else:
                 nome_grp_alloggi = "Residenza Alloggi"
 
-            # Conteggio quanti del proprio gruppo hanno confermato
+            # Conteggio studenti del proprio gruppo che hanno confermato
             alloggiati_stesso_gruppo = []
             try:
                 res_u_all = supabase.table("utenti").select("*").execute()
@@ -674,10 +674,10 @@ if not is_admin_or_segreteria:
             totale_gruppo_alloggi = len(alloggiati_stesso_gruppo)
             confermati_oggi = 0
             for pr in prenotazioni_raw:
-                if pr.get("data") == data_str and pr.get("utente_id") in alloggiati_stesso_gruppo:
+                if pr.get("data") == data_str and pr.get("utente_id") in alloggiati_stesso_gruppo and pr.get("posto_id") == "ALLOGGI":
                     confermati_oggi += 1
 
-            st.info(f"🏠 **Stato {nome_grp_alloggi} per il {data_visiva}:**\n**{confermati_oggi} su {totale_gruppo_alloggi}** studenti alloggiati del tuo gruppo hanno già confermato il posto auto per questa data.")
+            st.info(f"🏠 **Stato {nome_grp_alloggi} per il {data_visiva}:**\n**{confermati_oggi} su {totale_gruppo_alloggi}** studenti alloggiati del tuo gruppo hanno già confermato la presenza in auto per questa data.")
 
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             selected_passengers = st.multiselect(
@@ -696,22 +696,26 @@ if not is_admin_or_segreteria:
             col_all1, col_all2 = st.columns(2)
             
             with col_all1:
-                if st.button("Conferma per la DATA SELEZIONATA 📅", use_container_width=True):
-                    candidati_alloggi = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Alloggi"])
-                    if not candidati_alloggi:
-                        st.error("❌ Nessun posto alloggi libero per la data selezionata.")
-                    else:
-                        ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_alloggi, txt_turno_alloggi)
-                        if ok:
-                            st.success(f"🎉 Posto **{esito}** confermato per il {data_visiva}!")
-                            st.rerun()
-                        elif esito == "HAI_GIA_PRENOTATO":
-                            st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
+                if st.button("Conferma Presenza per la DATA SELEZIONATA 📅", use_container_width=True):
+                    # Inserimento generico "ALLOGGI" senza stallo fisso
+                    try:
+                        chk = supabase.table("prenotazioni").select("id").eq("utente_id", utente_loggato["id"]).eq("data", data_str).execute()
+                        if chk.data:
+                            st.warning("⚠️ Risulti già in possesso di una conferma per questa data.")
                         else:
-                            st.error("❌ Impossibile completare la prenotazione. Riprova.")
+                            supabase.table("prenotazioni").insert({
+                                "utente_id": utente_loggato["id"],
+                                "data": data_str,
+                                "posto_id": "ALLOGGI",
+                                "turno": txt_turno_alloggi
+                            }).execute()
+                            st.success(f"🎉 Presenza auto confermata per il {data_visiva}!")
+                            st.rerun()
+                    except Exception as ex_all_ins:
+                        st.error(f"❌ Errore durante la conferma: {ex_all_ins}")
 
             with col_all2:
-                if st.button("Conferma per TUTTO IL PERIODO di Alloggio 🗓️", use_container_width=True):
+                if st.button("Conferma Presenza per TUTTO IL PERIODO 🗓️", use_container_width=True):
                     date_periodo = []
                     curr_d = oggi
                     fine_d = oggi + datetime.timedelta(days=90)
@@ -728,30 +732,18 @@ if not is_admin_or_segreteria:
                             if chk.data:
                                 già_presenti += 1
                                 continue
+                            
+                            supabase.table("prenotazioni").insert({
+                                "utente_id": utente_loggato["id"],
+                                "data": d_target,
+                                "posto_id": "ALLOGGI",
+                                "turno": txt_turno_alloggi
+                            }).execute()
+                            successi += 1
                         except Exception:
                             pass
 
-                        try:
-                            res_occ = supabase.table("prenotazioni").select("posto_id").eq("data", d_target).execute()
-                            occ_d = set(r["posto_id"] for r in res_occ.data) if res_occ.data else set()
-                        except Exception:
-                            occ_d = set()
-
-                        candidati = [p for p in POSTI_PER_ZONA["Alloggi"] if p not in occ_d]
-                        if candidati:
-                            p_assegnato = candidati[0]
-                            try:
-                                supabase.table("prenotazioni").insert({
-                                    "utente_id": utente_loggato["id"],
-                                    "data": d_target,
-                                    "posto_id": p_assegnato,
-                                    "turno": txt_turno_alloggi
-                                }).execute()
-                                successi += 1
-                            except Exception:
-                                pass
-
-                    st.success(f"🎉 Posto auto confermato per **{successi}** date del tuo periodo di alloggio! ({già_presenti} date erano già confermate).")
+                    st.success(f"🎉 Presenza auto confermata per **{successi}** date del tuo periodo! ({già_presenti} date erano già confermate).")
                     st.rerun()
 
         elif gruppo_utente in ["Staff", "Segreteria"]:
@@ -968,8 +960,50 @@ else:
                         st.error("Nessun posto libero disponibile.")
         else:
             st.info("Nessuna prenotazione attiva da spostare per questa data.")
+            
+    # TAB 2: ASSEGNAZIONE STAFF & ELENCO ALLOGGIATI
+    with tab2:
+        st.write(f"### 🏠 Elenco Studenti Alloggiati Confermati ({data_visiva})")
+        
+        # Recupero alloggiati che hanno confermato la presenza per la data selezionata
+        alloggiati_confermati_oggi = []
+        for pr in prenotazioni_raw:
+            if pr.get("data") == data_str and pr.get("posto_id") == "ALLOGGI":
+                u_i = pr.get("utenti") or {}
+                if isinstance(u_i, list) and len(u_i) > 0:
+                    u_i = u_i[0]
+                elif not isinstance(u_i, dict):
+                    u_i = {}
+                
+                p_ids, p_names = parse_passengers(pr.get("turno", ""))
+                pass_txt = ", ".join(p_names) if p_names else "-"
+                
+                alloggiati_confermati_oggi.append({
+                    "id_prenotazione": pr.get("id"),
+                    "Studente": u_i.get("username", "-"),
+                    "Corso": u_i.get("gruppo", "-"),
+                    "Targa": u_i.get("targa") or "-",
+                    "Passeggeri": pass_txt
+                })
 
-    # TAB 2: ASSEGNAZIONE STAFF & ALLOGGI
+        if alloggiati_confermati_oggi:
+            df_alloggi_admin = pd.DataFrame(alloggiati_confermati_oggi)
+            st.dataframe(df_alloggi_admin[["Studente", "Corso", "Targa", "Passeggeri"]], use_container_width=True)
+            
+            with st.expander("🗑️ Revoca / Rimuovi Conferma Alloggiato"):
+                for item_all in alloggiati_confermati_oggi:
+                    col_del1, col_del2 = st.columns([4, 1])
+                    col_del1.write(f"👤 **{item_all['Studente']}** ({item_all['Corso']}) - Targa: `{item_all['Targa']}`")
+                    if col_del2.button("Rimuovi ❌", key=f"del_alloggi_adm_{item_all['id_prenotazione']}"):
+                        supabase.table("prenotazioni").delete().eq("id", item_all['id_prenotazione']).execute()
+                        st.success("Conferma rimossa!")
+                        st.rerun()
+        else:
+            st.info(f"Nessuno studente alloggiato ha ancora confermato la presenza in auto per il {data_visiva}.")
+
+        st.divider()
+        st.write("### 💼 Assegnazione Diretta Staff")
+        
     with tab2:
         st.write("### 💼 Assegnazione Diretta Staff & Alloggiati")
         utenti_speciali = []

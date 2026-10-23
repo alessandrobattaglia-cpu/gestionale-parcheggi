@@ -605,50 +605,7 @@ try:
 except Exception as e:
     st.error(f"⚠️ Impossibile caricare la mappa: {e}")
 
-# --- 7. LOGICA PRENOTAZIONI UTENTI ---
-st.divider()
-
-quote_dinamiche, corsi_presenti_oggi, numero_iscritti = calcola_quote_posti(data_scelta)
-
-def ottieni_posti_liberi_zona(prefisso_lista):
-    posti_liberi = []
-    for p in prefisso_lista:
-        if p in posti_bloccati_eventi:
-            continue
-        prenotazioni_posto = [pr for pr in prenotazioni_raw if pr["posto_id"] == p]
-        if not prenotazioni_posto:
-            posti_liberi.append(p)
-    return posti_liberi
-
-if not is_admin_or_segreteria:
-    mie_prenotazioni = [p for p in prenotazioni_raw if p["utente_id"] == utente_loggato["id"]]
-    is_passenger_check, driver_name_check, p_assigned_check = find_user_as_passenger(utente_loggato["id"], prenotazioni_raw)
-    
-    if mie_prenotazioni:
-        st.warning("🏷️ Hai la seguente prenotazione/assegnazione per questo giorno:")
-        for mp in mie_prenotazioni:
-            is_perm = mp.get("data") == DATA_PERMANENTE
-            dt_txt = "Permanente" if is_perm else data_visiva
-            st.write(f"- **Posto {mp['posto_id']}** ({dt_txt})")
-            
-            if st.button(f"Cancella Prenotazione {mp['posto_id']} ❌", key=f"del_{mp['id']}"):
-                supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
-                st.success("Prenotazione annullata!")
-                st.rerun()
-
-    elif is_passenger_check:
-        st.info(f"🚗 **Sei registrato come passeggero** nell'auto di **{driver_name_check}** (Posto **{p_assigned_check}**) per il giorno **{data_visiva}**.")
-        st.caption("Risultando già presente come passeggero, non puoi effettuare un'ulteriore prenotazione come conducente.")
-
-    else:
-        st.subheader("📌 Prenota il tuo Posto Auto")
-
-        if not targa_valida:
-            st.error("⚠️ **TARGA NON IMPOSTATA O NON VALIDA!**")
-            st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
-            st.stop()
-
-       # --- GESTIONE SPECIFICA ALLOGGIATI (SENZA STALLO FISSO) ---
+# --- GESTIONE SPECIFICA ALLOGGIATI (SOLO CONFERMA PER TUTTO IL PERIODO) ---
         if is_alloggi_user:
             giorni_corso = GRUPPI_STUDENTI.get(gruppo_utente, {}).get("giorni_default", [])
             if giorni_corso == [0, 1, 2]:
@@ -693,58 +650,37 @@ if not is_admin_or_segreteria:
             if selected_passengers:
                 txt_turno_alloggi += f" | PASSENGERS_IDS:{','.join(map(str, p_ids))} | PASSENGERS_NAMES:{','.join(p_names)}"
 
-            col_all1, col_all2 = st.columns(2)
-            
-            with col_all1:
-                if st.button("Conferma Presenza per la DATA SELEZIONATA 📅", use_container_width=True):
-                    # Inserimento generico "ALLOGGI" senza stallo fisso
+            # UNICO PULSANTE: Conferma per tutto il periodo di alloggio
+            if st.button("Conferma Presenza in Auto per TUTTO IL PERIODO 🗓️", use_container_width=True):
+                date_periodo = []
+                curr_d = oggi
+                fine_d = oggi + datetime.timedelta(days=90)
+                while curr_d <= fine_d:
+                    if curr_d.weekday() in giorni_corso:
+                        date_periodo.append(curr_d.strftime("%Y-%m-%d"))
+                    curr_d += datetime.timedelta(days=1)
+
+                successi = 0
+                già_presenti = 0
+                for d_target in date_periodo:
                     try:
-                        chk = supabase.table("prenotazioni").select("id").eq("utente_id", utente_loggato["id"]).eq("data", data_str).execute()
+                        chk = supabase.table("prenotazioni").select("id").eq("utente_id", utente_loggato["id"]).eq("data", d_target).execute()
                         if chk.data:
-                            st.warning("⚠️ Risulti già in possesso di una conferma per questa data.")
-                        else:
-                            supabase.table("prenotazioni").insert({
-                                "utente_id": utente_loggato["id"],
-                                "data": data_str,
-                                "posto_id": "ALLOGGI",
-                                "turno": txt_turno_alloggi
-                            }).execute()
-                            st.success(f"🎉 Presenza auto confermata per il {data_visiva}!")
-                            st.rerun()
-                    except Exception as ex_all_ins:
-                        st.error(f"❌ Errore durante la conferma: {ex_all_ins}")
+                            già_presenti += 1
+                            continue
+                        
+                        supabase.table("prenotazioni").insert({
+                            "utente_id": utente_loggato["id"],
+                            "data": d_target,
+                            "posto_id": "ALLOGGI",
+                            "turno": txt_turno_alloggi
+                        }).execute()
+                        successi += 1
+                    except Exception:
+                        pass
 
-            with col_all2:
-                if st.button("Conferma Presenza per TUTTO IL PERIODO 🗓️", use_container_width=True):
-                    date_periodo = []
-                    curr_d = oggi
-                    fine_d = oggi + datetime.timedelta(days=90)
-                    while curr_d <= fine_d:
-                        if curr_d.weekday() in giorni_corso:
-                            date_periodo.append(curr_d.strftime("%Y-%m-%d"))
-                        curr_d += datetime.timedelta(days=1)
-
-                    successi = 0
-                    già_presenti = 0
-                    for d_target in date_periodo:
-                        try:
-                            chk = supabase.table("prenotazioni").select("id").eq("utente_id", utente_loggato["id"]).eq("data", d_target).execute()
-                            if chk.data:
-                                già_presenti += 1
-                                continue
-                            
-                            supabase.table("prenotazioni").insert({
-                                "utente_id": utente_loggato["id"],
-                                "data": d_target,
-                                "posto_id": "ALLOGGI",
-                                "turno": txt_turno_alloggi
-                            }).execute()
-                            successi += 1
-                        except Exception:
-                            pass
-
-                    st.success(f"🎉 Presenza auto confermata per **{successi}** date del tuo periodo! ({già_presenti} date erano già confermate).")
-                    st.rerun()
+                st.success(f"🎉 Presenza auto confermata per **{successi}** date del tuo periodo di alloggio! ({già_presenti} date erano già confermate).")
+                st.rerun()
 
         elif gruppo_utente in ["Staff", "Segreteria"]:
             st.info("ℹ️ Come membro dello Staff / Segreteria puoi riservare un posto giornaliero o permanente.")

@@ -631,11 +631,10 @@ if not is_admin_or_segreteria:
             dt_txt = "Permanente" if is_perm else data_visiva
             st.write(f"- **Posto {mp['posto_id']}** ({dt_txt})")
             
-            if not is_alloggi_user:
-                if st.button(f"Cancella Prenotazione {mp['posto_id']} ❌", key=f"del_{mp['id']}"):
-                    supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
-                    st.success("Prenotazione annullata!")
-                    st.rerun()
+            if st.button(f"Cancella Prenotazione {mp['posto_id']} ❌", key=f"del_{mp['id']}"):
+                supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
+                st.success("Prenotazione annullata!")
+                st.rerun()
 
     elif is_passenger_check:
         st.info(f"🚗 **Sei registrato come passeggero** nell'auto di **{driver_name_check}** (Posto **{p_assigned_check}**) per il giorno **{data_visiva}**.")
@@ -644,20 +643,116 @@ if not is_admin_or_segreteria:
     else:
         st.subheader("📌 Prenota il tuo Posto Auto")
 
-        if is_student:
-            is_open, open_datetime = is_booking_open_for_student(data_scelta)
-            if not is_open:
-                st.warning(f"⏳ **Prenotazioni non ancora aperte per il giorno {data_visiva}!**")
-                st.info(f"Le prenotazioni per la settimana del **{data_scelta.strftime('%d/%m/%Y')}** si apriranno **Venerdì {open_datetime.strftime('%d/%m/%Y')} alle ore 9:00**.")
-                st.stop()
-
         if not targa_valida:
             st.error("⚠️ **TARGA NON IMPOSTATA O NON VALIDA!**")
             st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
             st.stop()
 
+        # --- GESTIONE SPECIFICA ALLOGGIATI ---
         if is_alloggi_user:
-            st.info("🏠 **Sei un utente residente negli Alloggi.** I posti parcheggio alloggiati vengono assegnati direttamente dall'Amministrazione.")
+            giorni_corso = GRUPPI_STUDENTI.get(gruppo_utente, {}).get("giorni_default", [])
+            if giorni_corso == [0, 1, 2]:
+                nome_grp_alloggi = "Gruppo 1 (Lunedì - Mercoledì)"
+            elif giorni_corso == [2, 3, 4]:
+                nome_grp_alloggi = "Gruppo 2 (Mercoledì - Venerdì)"
+            else:
+                nome_grp_alloggi = "Residenza Alloggi"
+
+            # Conteggio quanti del proprio gruppo hanno confermato
+            alloggiati_stesso_gruppo = []
+            try:
+                res_u_all = supabase.table("utenti").select("*").execute()
+                if res_u_all.data:
+                    for u in res_u_all.data:
+                        if check_is_alloggi(u):
+                            g_u = GRUPPI_STUDENTI.get(u.get("gruppo"), {}).get("giorni_default", [])
+                            if g_u == giorni_corso:
+                                alloggiati_stesso_gruppo.append(u.get("id"))
+            except Exception:
+                pass
+
+            totale_gruppo_alloggi = len(alloggiati_stesso_gruppo)
+            confermati_oggi = 0
+            for pr in prenotazioni_raw:
+                if pr.get("data") == data_str and pr.get("utente_id") in alloggiati_stesso_gruppo:
+                    confermati_oggi += 1
+
+            st.info(f"🏠 **Stato {nome_grp_alloggi} per il {data_visiva}:**\n**{confermati_oggi} su {totale_gruppo_alloggi}** studenti alloggiati del tuo gruppo hanno già confermato il posto auto per questa data.")
+
+            studenti_disponibili = get_lista_studenti(utente_loggato["id"])
+            selected_passengers = st.multiselect(
+                "👥 Seleziona chi viaggia in auto con te (facoltativo):",
+                options=studenti_disponibili,
+                format_func=lambda u: f"{u['username']} ({u['gruppo']})",
+                key="ms_passengers_alloggi"
+            )
+
+            p_ids = [u["id"] for u in selected_passengers]
+            p_names = [u["username"] for u in selected_passengers]
+            txt_turno_alloggi = "TUTTO_IL_GIORNO"
+            if selected_passengers:
+                txt_turno_alloggi += f" | PASSENGERS_IDS:{','.join(map(str, p_ids))} | PASSENGERS_NAMES:{','.join(p_names)}"
+
+            col_all1, col_all2 = st.columns(2)
+            
+            with col_all1:
+                if st.button("Conferma per la DATA SELEZIONATA 📅", use_container_width=True):
+                    candidati_alloggi = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Alloggi"])
+                    if not candidati_alloggi:
+                        st.error("❌ Nessun posto alloggi libero per la data selezionata.")
+                    else:
+                        ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_alloggi, txt_turno_alloggi)
+                        if ok:
+                            st.success(f"🎉 Posto **{esito}** confermato per il {data_visiva}!")
+                            st.rerun()
+                        elif esito == "HAI_GIA_PRENOTATO":
+                            st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
+                        else:
+                            st.error("❌ Impossibile completare la prenotazione. Riprova.")
+
+            with col_all2:
+                if st.button("Conferma per TUTTO IL PERIODO di Alloggio 🗓️", use_container_width=True):
+                    date_periodo = []
+                    curr_d = oggi
+                    fine_d = oggi + datetime.timedelta(days=90)
+                    while curr_d <= fine_d:
+                        if curr_d.weekday() in giorni_corso:
+                            date_periodo.append(curr_d.strftime("%Y-%m-%d"))
+                        curr_d += datetime.timedelta(days=1)
+
+                    successi = 0
+                    già_presenti = 0
+                    for d_target in date_periodo:
+                        try:
+                            chk = supabase.table("prenotazioni").select("id").eq("utente_id", utente_loggato["id"]).eq("data", d_target).execute()
+                            if chk.data:
+                                già_presenti += 1
+                                continue
+                        except Exception:
+                            pass
+
+                        try:
+                            res_occ = supabase.table("prenotazioni").select("posto_id").eq("data", d_target).execute()
+                            occ_d = set(r["posto_id"] for r in res_occ.data) if res_occ.data else set()
+                        except Exception:
+                            occ_d = set()
+
+                        candidati = [p for p in POSTI_PER_ZONA["Alloggi"] if p not in occ_d]
+                        if candidati:
+                            p_assegnato = candidati[0]
+                            try:
+                                supabase.table("prenotazioni").insert({
+                                    "utente_id": utente_loggato["id"],
+                                    "data": d_target,
+                                    "posto_id": p_assegnato,
+                                    "turno": txt_turno_alloggi
+                                }).execute()
+                                successi += 1
+                            except Exception:
+                                pass
+
+                    st.success(f"🎉 Posto auto confermato per **{successi}** date del tuo periodo di alloggio! ({già_presenti} date erano già confermate).")
+                    st.rerun()
 
         elif gruppo_utente in ["Staff", "Segreteria"]:
             st.info("ℹ️ Come membro dello Staff / Segreteria puoi riservare un posto giornaliero o permanente.")
@@ -694,6 +789,13 @@ if not is_admin_or_segreteria:
                 st.error("❌ Nessun Posto Docenti libero per oggi.")
 
         else:
+            if is_student:
+                is_open, open_datetime = is_booking_open_for_student(data_scelta)
+                if not is_open:
+                    st.warning(f"⏳ **Prenotazioni non ancora aperte per il giorno {data_visiva}!**")
+                    st.info(f"Le prenotazioni per la settimana del **{data_scelta.strftime('%d/%m/%Y')}** si apriranno **Venerdì {open_datetime.strftime('%d/%m/%Y')} alle ore 9:00**.")
+                    st.stop()
+
             if gruppo_utente not in corsi_presenti_oggi:
                 st.error(f"❌ Il gruppo **{gruppo_utente}** non risulta presente/in lezione il giorno **{data_visiva}**.")
                 st.stop()
@@ -729,7 +831,6 @@ if not is_admin_or_segreteria:
                     if not selected_passengers:
                         st.error("❌ **ATTENZIONE**: Devi selezionare **almeno un passeggero** che viaggia con te per poter prenotare (regola carpooling)!")
                     else:
-                        # 4. ASSEGNAZIONE PRIMA BASSA -> PIAZZALE -> ALTA
                         candidati_studenti = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Piazzale"] + POSTI_PER_ZONA["Alta"])
                         
                         if candidati_studenti:
@@ -741,7 +842,7 @@ if not is_admin_or_segreteria:
                             ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_studenti, txt_turno)
                             
                             if ok:
-                                st.success(f"🎉 Ti è stato assegnato il **Posto {esito}** con {len(selected_passengers)} passeggeri registrati!")
+                                st.success(f"🎉 Ti è stato assigned il **Posto {esito}** con {len(selected_passengers)} passeggeri registrati!")
                                 st.rerun()
                             elif esito == "HAI_GIA_PRENOTATO":
                                 st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
@@ -749,7 +850,6 @@ if not is_admin_or_segreteria:
                                 st.error("❌ I posti liberi sono stati appena occupati da altri utenti. Riprova.")
                         else:
                             st.error("❌ Tutti i posti studenti sono occupati o bloccati per eventi.")
-
 # --- 8. PANNELLO AMMINISTRAZIONE & SEGRETERIA ---
 else:
     st.divider()

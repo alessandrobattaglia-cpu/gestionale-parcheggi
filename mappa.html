@@ -246,8 +246,8 @@
         <rect class="spot zone-docenti" x="415" y="420" width="22" height="22" data-id="Docenti-3" />
         <rect class="spot zone-docenti" x="415" y="435" width="22" height="22" data-id="Docenti-4" />
         <rect class="spot zone-docenti" x="415" y="450" width="22" height="22" data-id="Docenti-5" />
-        <rect class="spot zone-docenti" x="415" y="490" width="22" height="22" data-id="Docenti-6" />
-        <rect class="spot zone-docenti" x="415" y="505" width="22" height="22" data-id="Docenti-7" />
+        <rect class="spot zone-docenti" x="415" y="500" width="22" height="22" data-id="Docenti-6" />
+        <rect class="spot zone-docenti" x="415" y="515" width="22" height="22" data-id="Docenti-7" />
       </g>
       <!-- 6. ZONA ALLOGGI - Verde Scuro (13 Posti Ingranditi) -->
       <g id="zona-alloggi">
@@ -297,7 +297,6 @@
       const info = prenotazioniDB[postoId];
 
       if (postoId) {
-        // Calcolo dinamico del centro del quadratino in base a larghezza ed altezza
         const w = parseFloat(spot.getAttribute('width')) || 22;
         const h = parseFloat(spot.getAttribute('height')) || 22;
         const x = parseFloat(spot.getAttribute('x')) + (w / 2);
@@ -345,7 +344,10 @@
       }
 
       spot.addEventListener('mousemove', (e) => {
-        let text = `🚘 Posto: ${postoId}\n`;
+        // Mostra solo il numero 1..49 per la vista studente nel tooltip
+        const displaySpot = isStudentView ? getSpotLabel(postoId) : postoId;
+        let text = `🚘 Posto: ${displaySpot}\n`;
+        
         if (info) {
           const uName = info.username || "";
           const uGrp = info.gruppo || "";

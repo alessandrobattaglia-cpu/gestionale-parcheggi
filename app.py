@@ -273,7 +273,7 @@ def calcola_quote_posti(data_obj):
             quote[g] = 0
             continue
             
-        # MODIFICATO: Minimo 2 persone per auto (math.ceil(n_stud / 2))
+        # Minimo 2 persone per auto
         cap_carpooling = math.ceil(n_stud / 2)
         
         if totale_studenti_oggi > 0:
@@ -633,7 +633,9 @@ if not is_admin_or_segreteria:
             cod_num = get_codice_mappa(mp['posto_id']) if is_student else mp['posto_id']
             st.write(f"- **Posto numero {cod_num}** ({dt_txt})")
             
-            if st.button(f"Cancella Prenotazione {mp['posto_id']} ❌", key=f"del_{mp['id']}"):
+            # Etichetta del pulsante adattata per mostrare solo il numero dello stallo agli studenti
+            txt_del_btn = f"Cancella Prenotazione Posto {cod_num} ❌" if is_student else f"Cancella Prenotazione {mp['posto_id']} ❌"
+            if st.button(txt_del_btn, key=f"del_{mp['id']}"):
                 supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
                 st.success("Prenotazione annullata!")
                 st.rerun()
@@ -786,7 +788,6 @@ if not is_admin_or_segreteria:
                 if u_grp == gruppo_utente and not check_is_alloggi(u_inf):
                     occupati_gruppo += 1
             
-            # MODIFICATO: Regola minima aggiornata a 2 persone/auto
             st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti auto (regola min 2 persone/auto).")
             
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
@@ -816,7 +817,6 @@ if not is_admin_or_segreteria:
                             ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_studenti, txt_turno)
                             
                             if ok:
-                                # MODIFICATO: Mostra il numero progressivo da 1 a 49 (es. "posto numero 15")
                                 cod_num = get_codice_mappa(esito)
                                 st.success(f"🎉 Ti è stato assegnato il **posto numero {cod_num}** con {len(selected_passengers)} passeggeri registrati!")
                                 st.rerun()

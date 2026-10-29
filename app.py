@@ -46,14 +46,14 @@ MAPPA_GIORNI_SETTIMANA = {
     "Domenica": 6
 }
 
-# Posti per zona (Sequenza Studenti: Bassa 15 -> Piazzale 17 -> Alta 17)
-TOTALE_POSTI_STUDENTI = 15 + 17 + 17  # 49 Posti Studenti
+# Totale effettivo posti prenotabili (15 Bassa + 17 Piazzale + 18 Alta - 1 Inagibile = 49 Posti)
+TOTALE_POSTI_STUDENTI = 49  
 DATA_PERMANENTE = "2099-12-31"
 
 POSTI_PER_ZONA = {
     "Bassa": [f"Bassa-{i}" for i in range(1, 16)],
     "Piazzale": [f"Piazzale-{i}" for i in range(1, 18)],
-    "Alta": [f"Alta-{i}" for i in range(1, 18)],
+    "Alta": [f"Alta-{i}" for i in range(1, 19)], # 1..18 (Alta-18 = Posto 50)
     "Staff": [f"Staff-{i}" for i in range(1, 25)],
     "Docenti": [f"Docenti-{i}" for i in range(1, 8)],
     "Alloggi": [f"Alloggi-{i}" for i in range(1, 14)]
@@ -84,11 +84,37 @@ def get_codice_mappa(posto_id):
     elif pref == "Piazzale":
         return str(15 + num)           # 16..32
     elif pref == "Alta":
-        return str(15 + 17 + num)      # 33..49
+        return str(15 + 17 + num)      # 33..50 (Alta-7 = 39, Alta-18 = 50)
     else:
         return f"{PREFIX_MAP.get(pref, pref[0])}{num}"
 
-# --- FUNZIONE LOGICA MAPPAZIONE ZONE EVENTO ---
+# --- FUNZIONI UTILITY TARGE, PASSEGGERI & ZONE EVENTO ---
+def is_valid_targa_italiana(targa_str):
+    if not targa_str:
+        return False
+    pattern = r"^[A-Z]{2}\d{3}[A-Z]{2}$"
+    return bool(re.match(pattern, targa_str.strip().upper()))
+
+def parse_targhe(targa_str):
+    if not targa_str:
+        return []
+    raw = re.split(r"[,;\s]+", str(targa_str).upper())
+    valid_list = []
+    for t in raw:
+        t_clean = t.strip()
+        if is_valid_targa_italiana(t_clean) and t_clean not in valid_list:
+            valid_list.append(t_clean)
+    return valid_list
+
+def parse_selected_targa(turno_str, default_targa_str):
+    if turno_str and "| TARGA:" in turno_str:
+        try:
+            return turno_str.split("| TARGA:")[1].split("|")[0].strip()
+        except Exception:
+            pass
+    t_list = parse_targhe(default_targa_str)
+    return t_list[0] if t_list else "-"
+
 def get_zona_evento(posto_id):
     if not posto_id:
         return "-"
@@ -112,13 +138,6 @@ def get_zona_evento(posto_id):
         else:
             return "Zona Grigia"
     return "Zona Grigia"
-
-# --- FUNZIONI UTILITY UTENTI & PASSEGGERI ---
-def is_valid_targa_italiana(targa_str):
-    if not targa_str:
-        return False
-    pattern = r"^[A-Z]{2}\d{3}[A-Z]{2}$"
-    return bool(re.match(pattern, targa_str.strip().upper()))
 
 def check_is_alloggi(u_dict):
     if not isinstance(u_dict, dict):
@@ -295,6 +314,20 @@ def get_eventi_giorno(data_str):
 def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
     eventi = get_eventi_giorno(data_str)
     bloccati = {}
+    
+    # --- BLOCCO PERMANENTE AUTOMATICO DEL POSTO 39 (Alta-7) PERCHÈ NON AGIBILE ---
+    bloccati["Alta-7"] = {
+        "id_prenotazione": "inagibile_39",
+        "utente_id": None,
+        "username": "⛔ NON AGIBILE",
+        "targa": "-",
+        "gruppo": "RISERVATO",
+        "turno": "BLOCCATO",
+        "is_mine": False,
+        "is_event": False,
+        "zona_evento": "Zona Rossa"
+    }
+
     for ev in eventi:
         ev_id = ev.get("id")
         ev_nome = ev.get("nome_evento", "Evento")
@@ -316,6 +349,8 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
             blocchi_list = ev_blocchi if isinstance(ev_blocchi, list) else ["TUTTI"]
             
         for p_id in POSTI.keys():
+            if p_id == "Alta-7":
+                continue # Mantiene prioritario il blocco inagibile
             prefisso = p_id.split("-")[0]
             z_ev = get_zona_evento(p_id)
             if "TUTTI" in blocchi_list or prefisso in blocchi_list or z_ev in blocchi_list:
@@ -412,30 +447,33 @@ is_staff_or_admin = is_admin_or_segreteria or (gruppo_utente == "Staff")
 is_alloggi_user = check_is_alloggi(utente_loggato)
 is_student = (not is_admin_or_segreteria) and (gruppo_utente in GRUPPI_STUDENTI)
 
-# --- SIDEBAR DI CONTROLLO ---
+# --- SIDEBAR DI CONTROLLO & GESTIONE MULTI-TARGA ---
 st.sidebar.header("👤 Account")
 st.sidebar.write(f"Utente: **{username}**")
 st.sidebar.write(f"Ruolo/Corso: **{gruppo_utente}**")
 if is_alloggi_user:
     st.sidebar.info("🏠 **Residente Alloggi**")
 
-targa_valida = is_valid_targa_italiana(targa_utente)
+targhe_utente_list = parse_targhe(targa_utente)
+targa_valida = len(targhe_utente_list) > 0
+
 if targa_valida:
-    st.sidebar.success(f"Targa: **{targa_utente}** 🟢")
+    st.sidebar.success(f"Targhe: **{', '.join(targhe_utente_list)}** 🟢")
 else:
     st.sidebar.error("Targa: **Non valida o mancante!** 🔴")
 
-with st.sidebar.expander("✏️ Modifica la tua Targa (Formato IT)"):
-    st.caption("Esempio valido: **AA123BB** (2 lettere, 3 cifre, 2 lettere)")
-    nuova_targa = st.text_input("Nuova Targa:", value=targa_utente, key="input_targa")
-    if st.button("Salva Targa 💾", use_container_width=True):
-        t_clean = nuova_targa.strip().upper()
-        if not is_valid_targa_italiana(t_clean):
-            st.error("❌ Formato targa non valido! Inserisci 2 lettere, 3 cifre e 2 lettere (es. AA123BB).")
+with st.sidebar.expander("✏️ Gestisci le tue Targhe (Formato IT)"):
+    st.caption("Puoi inserire più targhe separate da virgola (es. **AA123BB, CC456DD**)")
+    nuova_targa_input = st.text_input("Targhe registrate:", value=", ".join(targhe_utente_list), key="input_targa")
+    if st.button("Salva Targhe 💾", use_container_width=True):
+        t_parsed = parse_targhe(nuova_targa_input)
+        if not t_parsed:
+            st.error("❌ Nessuna targa valida inserita! Usare il formato IT (es. AA123BB - 2 lettere, 3 cifre, 2 lettere).")
         else:
-            supabase.table("utenti").update({"targa": t_clean}).eq("id", utente_loggato["id"]).execute()
-            st.session_state["utente_autenticato"]["targa"] = t_clean
-            st.success("Targa aggiornata con successo!")
+            str_salvata = ", ".join(t_parsed)
+            supabase.table("utenti").update({"targa": str_salvata}).eq("id", utente_loggato["id"]).execute()
+            st.session_state["utente_autenticato"]["targa"] = str_salvata
+            st.success("Targhe aggiornate con successo!")
             st.rerun()
 
 with st.sidebar.expander("🔑 Modifica Password"):
@@ -501,8 +539,8 @@ for p in prenotazioni_raw:
 
         u_grp = info_u.get("gruppo", "")
         u_name = info_u.get("username", "")
-        u_targa = info_u.get("targa") or "-"
         p_turno = str(p.get("turno", ""))
+        u_targa = parse_selected_targa(p_turno, info_u.get("targa") or "")
         
         pass_ids, pass_names = parse_passengers(p_turno)
         
@@ -633,7 +671,6 @@ if not is_admin_or_segreteria:
             cod_num = get_codice_mappa(mp['posto_id']) if is_student else mp['posto_id']
             st.write(f"- **Posto numero {cod_num}** ({dt_txt})")
             
-            # Etichetta del pulsante adattata per mostrare solo il numero dello stallo agli studenti
             txt_del_btn = f"Cancella Prenotazione Posto {cod_num} ❌" if is_student else f"Cancella Prenotazione {mp['posto_id']} ❌"
             if st.button(txt_del_btn, key=f"del_{mp['id']}"):
                 supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
@@ -653,6 +690,12 @@ if not is_admin_or_segreteria:
             st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
             st.stop()
 
+        # Selezione Targa se l'utente ne ha registrate più di una
+        if len(targhe_utente_list) > 1:
+            targa_selezionata_booking = st.selectbox("🏎️ Seleziona quale auto/targa stai usando per questa prenotazione:", options=targhe_utente_list, key="sb_targa_booking_user")
+        else:
+            targa_selezionata_booking = targhe_utente_list[0] if targhe_utente_list else "-"
+
         # --- GESTIONE SPECIFICA ALLOGGIATI (SOLO CONFERMA PER TUTTO IL PERIODO) ---
         if is_alloggi_user:
             giorni_corso = GRUPPI_STUDENTI.get(gruppo_utente, {}).get("giorni_default", [])
@@ -663,7 +706,6 @@ if not is_admin_or_segreteria:
             else:
                 nome_grp_alloggi = "Residenza Alloggi"
 
-            # Conteggio studenti del proprio gruppo che hanno confermato
             alloggiati_stesso_gruppo = []
             try:
                 res_u_all = supabase.table("utenti").select("*").execute()
@@ -694,7 +736,7 @@ if not is_admin_or_segreteria:
 
             p_ids = [u["id"] for u in selected_passengers]
             p_names = [u["username"] for u in selected_passengers]
-            txt_turno_alloggi = "TUTTO_IL_GIORNO"
+            txt_turno_alloggi = f"TUTTO_IL_GIORNO | TARGA:{targa_selezionata_booking}"
             if selected_passengers:
                 txt_turno_alloggi += f" | PASSENGERS_IDS:{','.join(map(str, p_ids))} | PASSENGERS_NAMES:{','.join(p_names)}"
 
@@ -737,9 +779,10 @@ if not is_admin_or_segreteria:
             if candidati_staff:
                 if st.button(f"Conferma Assegnazione Posto Staff 🟢", use_container_width=True):
                     d_save = DATA_PERMANENTE if tipo_staff == "Permanente (Fissa)" else data_str
-                    ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], d_save, candidati_staff, "TUTTO_IL_GIORNO")
+                    txt_turno_staff = f"TUTTO_IL_GIORNO | TARGA:{targa_selezionata_booking}"
+                    ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], d_save, candidati_staff, txt_turno_staff)
                     if ok:
-                        st.success(f"Posto **{esito}** riservato con successo!")
+                        st.success(f"Posto **{esito}** riservato con successo per l'auto **{targa_selezionata_booking}**!")
                         st.rerun()
                     elif esito == "HAI_GIA_PRENOTATO":
                         st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
@@ -752,9 +795,10 @@ if not is_admin_or_segreteria:
             candidati_doc = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Docenti"])
             if candidati_doc:
                 if st.button(f"Prenota Posto Docenti 🟢", use_container_width=True):
-                    ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_doc, "TUTTO_IL_GIORNO")
+                    txt_turno_doc = f"TUTTO_IL_GIORNO | TARGA:{targa_selezionata_booking}"
+                    ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_doc, txt_turno_doc)
                     if ok:
-                        st.success(f"Posto **{esito}** prenotato con successo!")
+                        st.success(f"Posto **{esito}** prenotato con successo per l'auto **{targa_selezionata_booking}**!")
                         st.rerun()
                     elif esito == "HAI_GIA_PRENOTATO":
                         st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
@@ -812,13 +856,13 @@ if not is_admin_or_segreteria:
                             p_ids = [u["id"] for u in selected_passengers]
                             p_names = [u["username"] for u in selected_passengers]
                             
-                            txt_turno = f"TUTTO_IL_GIORNO | PASSENGERS_IDS:{','.join(map(str, p_ids))} | PASSENGERS_NAMES:{','.join(p_names)}"
+                            txt_turno = f"TUTTO_IL_GIORNO | TARGA:{targa_selezionata_booking} | PASSENGERS_IDS:{','.join(map(str, p_ids))} | PASSENGERS_NAMES:{','.join(p_names)}"
                             
                             ok, esito = prenotazione_atomica_sicura(utente_loggato["id"], data_str, candidati_studenti, txt_turno)
                             
                             if ok:
                                 cod_num = get_codice_mappa(esito)
-                                st.success(f"🎉 Ti è stato assegnato il **posto numero {cod_num}** con {len(selected_passengers)} passeggeri registrati!")
+                                st.success(f"🎉 Ti è stato assegnato il **posto numero {cod_num}** (Targa: `{targa_selezionata_booking}`) con {len(selected_passengers)} passeggeri registrati!")
                                 st.rerun()
                             elif esito == "HAI_GIA_PRENOTATO":
                                 st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
@@ -887,6 +931,7 @@ else:
                         u_id_occ = occ.get("utente_id")
                         n_occ = u_info.get("username", "")
                         t_occ = str(occ.get("turno", ""))
+                        targa_occ = parse_selected_targa(t_occ, u_info.get("targa") or "")
                         
                         is_block = (u_id_occ is None) or (n_occ.lower() == "admin") or (t_occ == "BLOCCATO")
                         
@@ -897,7 +942,7 @@ else:
                                 st.success(f"Posto {posto_admin} sbloccato!")
                                 st.rerun()
                         else:
-                            st.error(f"Occupato da: **{n_occ}** ({get_zona_evento(posto_admin)}) - Targa: `{u_info.get('targa') or '-'}`")
+                            st.error(f"Occupato da: **{n_occ}** ({get_zona_evento(posto_admin)}) - Targa: `{targa_occ}`")
                             if st.button(f"Rimuovi Prenotazione 🗑️", use_container_width=True):
                                 supabase.table("prenotazioni").delete().eq("id", occ["id"]).execute()
                                 st.success("Prenotazione rimossa!")
@@ -947,7 +992,6 @@ else:
     with tab2:
         st.write(f"### 🏠 Elenco Studenti Alloggiati Confermati ({data_visiva})")
         
-        # Recupero alloggiati che hanno confermato la presenza per la data selezionata
         alloggiati_confermati_oggi = []
         for pr in prenotazioni_raw:
             if pr.get("data") == data_str and pr.get("posto_id") == "ALLOGGI":
@@ -957,14 +1001,16 @@ else:
                 elif not isinstance(u_i, dict):
                     u_i = {}
                 
-                p_ids, p_names = parse_passengers(pr.get("turno", ""))
+                p_turno_all = str(pr.get("turno", ""))
+                p_ids, p_names = parse_passengers(p_turno_all)
                 pass_txt = ", ".join(p_names) if p_names else "-"
+                targa_alloggiato = parse_selected_targa(p_turno_all, u_i.get("targa") or "")
                 
                 alloggiati_confermati_oggi.append({
                     "id_prenotazione": pr.get("id"),
                     "Studente": u_i.get("username", "-"),
                     "Corso": u_i.get("gruppo", "-"),
-                    "Targa": u_i.get("targa") or "-",
+                    "Targa": targa_alloggiato,
                     "Passeggeri": pass_txt
                 })
         if alloggiati_confermati_oggi:
@@ -1001,7 +1047,7 @@ else:
                 membro_scelto = st.selectbox(
                     "Seleziona Utente (Staff / Alloggiato):",
                     options=utenti_speciali,
-                    format_func=lambda u: f"{u['username']} ({'Alloggi' if check_is_alloggi(u) else u.get('gruppo')}) - Targa: {u.get('targa') or '-'}",
+                    format_func=lambda u: f"{u['username']} ({'Alloggi' if check_is_alloggi(u) else u.get('gruppo')}) - Targhe: {u.get('targa') or '-'}",
                     key="sb_staff_member"
                 )
                 modalita_assegnazione = st.radio("Modalità di Assegnazione:", ["Giorni Ricorrenti", "Singola Data", "Permanente (Fissa)"], key="radio_mod_staff")
@@ -1011,6 +1057,13 @@ else:
                 posti_suggeriti = POSTI_PER_ZONA["Alloggi"] if is_membro_alloggi else POSTI_PER_ZONA["Staff"]
                 altri_posti = [p for p in POSTI.keys() if p not in posti_suggeriti]
                 posto_staff_scelto = st.selectbox("Seleziona Posto da Assegnare:", posti_suggeriti + altri_posti, key="sb_staff_spot")
+            
+            targhe_membro = parse_targhe(membro_scelto.get("targa"))
+            if len(targhe_membro) > 1:
+                targa_assegnata_staff = st.selectbox("Seleziona Targa per questa assegnazione:", options=targhe_membro, key="sb_targa_admin_staff")
+            else:
+                targa_assegnata_staff = targhe_membro[0] if targhe_membro else "-"
+
             date_da_inserire = []
             if modalita_assegnazione == "Singola Data":
                 data_singola = st.date_input("Seleziona la Data:", value=data_scelta, min_value=oggi, key="dt_staff_singola")
@@ -1032,18 +1085,21 @@ else:
                         if curr_d.weekday() in giorni_nums:
                             date_da_inserire.append(curr_d.strftime("%Y-%m-%d"))
                         curr_d += datetime.timedelta(days=1)
+            
             if st.button("Conferma Assegnazione 🟢", use_container_width=True, key="btn_confirm_staff"):
                 if not date_da_inserire:
                     st.error("❌ Nessuna data valida selezionata.")
                 else:
-                    payload = [{"utente_id": membro_scelto["id"], "data": d_val, "posto_id": posto_staff_scelto, "turno": "TUTTO_IL_GIORNO"} for d_val in date_da_inserire]
+                    txt_t_save = f"TUTTO_IL_GIORNO | TARGA:{targa_assegnata_staff}"
+                    payload = [{"utente_id": membro_scelto["id"], "data": d_val, "posto_id": posto_staff_scelto, "turno": txt_t_save} for d_val in date_da_inserire]
                     supabase.table("prenotazioni").insert(payload).execute()
-                    st.success(f"🎉 Posto **{posto_staff_scelto}** assegnato a **{membro_scelto['username']}**!")
+                    st.success(f"🎉 Posto **{posto_staff_scelto}** assegnato a **{membro_scelto['username']}** (Targa: `{targa_assegnata_staff}`)!")
                     st.rerun()
+
             st.divider()
             st.write("### 🗑️ Gestione e Revoca Assegnazioni Speciali")
             try:
-                res_all_s = supabase.table("prenotazioni").select("id, data, posto_id, utente_id, utenti(*)").execute()
+                res_all_s = supabase.table("prenotazioni").select("id, data, posto_id, turno, utente_id, utenti(*)").execute()
                 if res_all_s.data:
                     for r in res_all_s.data:
                         u_i = r.get("utenti") or {}
@@ -1053,9 +1109,12 @@ else:
                             u_i = {}
                         dt_r = r.get("data")
                         p_r = r.get("posto_id")
+                        t_r = str(r.get("turno", ""))
+                        targa_disp_spec = parse_selected_targa(t_r, u_i.get("targa") or "")
+                        
                         if str(p_r).startswith("Staff") or str(p_r).startswith("Alloggi") or u_i.get("gruppo") in ["Staff", "Segreteria"]:
                             col_r1, col_r2, col_r3, col_r4 = st.columns([3, 2, 2, 1])
-                            col_r1.write(f"👤 **{u_i.get('username')}** ({u_i.get('targa') or '-'})")
+                            col_r1.write(f"👤 **{u_i.get('username')}** ({targa_disp_spec})")
                             col_r2.write(f"🅿️ Posto: **{p_r}**")
                             col_r3.write(f"📅 `{ 'PERMANENTE' if dt_r == DATA_PERMANENTE else dt_r }`")
                             if col_r4.button("❌", key=f"del_spec_{r['id']}"):
@@ -1219,11 +1278,10 @@ else:
                     st.success(f"Aggiornata presenza per {grp}!")
                     st.rerun()
 
-    # TAB 5: REPORT E QUOTE (CON QUOTA RESIDUA & FIX TARGA EXCEL)
+    # TAB 5: REPORT E QUOTE
     with tab5:
         st.write("### 📊 Quote Posti Calcolate per Oggi (Carpooling Applicato)")
         
-        # Calcolo dinamico auto prenotate e quote residue per ciascun corso
         prenotazioni_oggi = [pr for pr in prenotazioni_raw if pr.get("data") == data_str]
         
         table_rows = []
@@ -1277,9 +1335,9 @@ else:
                             u_info = {}
                         p_data_raw = str(item.get("data", ""))
                         p_user = u_info.get("username", "")
-                        p_targa = u_info.get("targa") or "-"
                         p_id = item.get("posto_id", "")
                         p_turno = str(item.get("turno", ""))
+                        p_targa = parse_selected_targa(p_turno, u_info.get("targa") or "")
                         
                         cod_abbr = get_codice_mappa(p_id)
                         p_ids, p_names = parse_passengers(p_turno)

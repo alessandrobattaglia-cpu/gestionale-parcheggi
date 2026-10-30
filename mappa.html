@@ -198,8 +198,8 @@
         <rect class="spot zone-verde" x="850" y="435" width="22" height="22" data-id="Alta-4" />
         <rect class="spot zone-verde" x="865" y="430" width="22" height="22" data-id="Alta-5" />
         <rect class="spot zone-verde" x="880" y="425" width="22" height="22" data-id="Alta-6" />
-        <rect class="spot zone-verde" x="895" y="420" width="22" height="22" data-id="Alta-7" /> <!-- Posto 39 (Inagibile) -->
-        <rect class="spot zone-verde" x="805" y="550" width="22" height="22" data-id="Alta-8" />
+        <rect class="spot zone-verde" x="895" y="420" width="22" height="22" data-id="Alta-7" /> <!-- Posto 39 (Non Agibile) -->
+        <rect class="spot zone-verde" x="805" y="550" width="22" height="22" data-id="Alta-8" /> <!-- Posto 40 (Non Agibile) -->
         <rect class="spot zone-verde" x="820" y="545" width="22" height="22" data-id="Alta-9" />
         <rect class="spot zone-verde" x="835" y="540" width="22" height="22" data-id="Alta-10" />
         <rect class="spot zone-verde" x="850" y="535" width="22" height="22" data-id="Alta-11" />
@@ -352,7 +352,7 @@
           if (info.is_mine) {
             text += `📍 IL TUO POSTO PRENOTATO!\n👤 Conducente: ${uName}`;
             if (info.targa && info.targa !== '-') text += `\n🏎️ Targa: ${info.targa}`;
-          } else if (uName.includes('NON AGIBILE')) {
+          } else if (uName.toUpperCase().includes('NON AGIBILE')) {
             text += `⛔ STATO: NON AGIBILE`;
           } else if (uName.includes('bloccato') || uName.toLowerCase() === 'admin') {
             text += `⛔ STATO: BLOCCATO DA ADMIN`;

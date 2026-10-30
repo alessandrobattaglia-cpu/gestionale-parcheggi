@@ -46,8 +46,8 @@ MAPPA_GIORNI_SETTIMANA = {
     "Domenica": 6
 }
 
-# Totale effettivo posti prenotabili (15 Bassa + 17 Piazzale + 18 Alta - 1 Inagibile = 49 Posti)
-TOTALE_POSTI_STUDENTI = 49  
+# Totale effettivo posti prenotabili (15 Bassa + 17 Piazzale + 18 Alta - 2 Inagibili = 48 Posti)
+TOTALE_POSTI_STUDENTI = 48  
 DATA_PERMANENTE = "2099-12-31"
 
 POSTI_PER_ZONA = {
@@ -84,7 +84,7 @@ def get_codice_mappa(posto_id):
     elif pref == "Piazzale":
         return str(15 + num)           # 16..32
     elif pref == "Alta":
-        return str(15 + 17 + num)      # 33..50 (Alta-7 = 39, Alta-18 = 50)
+        return str(15 + 17 + num)      # 33..50 (Alta-7 = 39, Alta-8 = 40, Alta-18 = 50)
     else:
         return f"{PREFIX_MAP.get(pref, pref[0])}{num}"
 
@@ -315,9 +315,20 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
     eventi = get_eventi_giorno(data_str)
     bloccati = {}
     
-    # --- BLOCCO PERMANENTE AUTOMATICO DEL POSTO 39 (Alta-7) PERCHÈ NON AGIBILE ---
+    # --- BLOCCO PERMANENTE AUTOMATICO DEI POSTI 39 (Alta-7) E 40 (Alta-8) PERCHÈ NON AGIBILI ---
     bloccati["Alta-7"] = {
         "id_prenotazione": "inagibile_39",
+        "utente_id": None,
+        "username": "⛔ NON AGIBILE",
+        "targa": "-",
+        "gruppo": "RISERVATO",
+        "turno": "BLOCCATO",
+        "is_mine": False,
+        "is_event": False,
+        "zona_evento": "Zona Rossa"
+    }
+    bloccati["Alta-8"] = {
+        "id_prenotazione": "inagibile_40",
         "utente_id": None,
         "username": "⛔ NON AGIBILE",
         "targa": "-",
@@ -349,8 +360,8 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
             blocchi_list = ev_blocchi if isinstance(ev_blocchi, list) else ["TUTTI"]
             
         for p_id in POSTI.keys():
-            if p_id == "Alta-7":
-                continue # Mantiene prioritario il blocco inagibile
+            if p_id in ["Alta-7", "Alta-8"]:
+                continue # Mantiene prioritario il blocco non agibile
             prefisso = p_id.split("-")[0]
             z_ev = get_zona_evento(p_id)
             if "TUTTI" in blocchi_list or prefisso in blocchi_list or z_ev in blocchi_list:

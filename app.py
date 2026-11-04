@@ -259,7 +259,7 @@ def get_eventi_giorno(data_str):
 def get_posti_bloccati_evento_per_corso(data_str, gruppo_corso=None, is_staff_or_admin=False):
     """
     Restituisce i posti bloccati per un determinato gruppo/corso in base agli eventi del giorno.
-    Se gruppo_corso è None o è Admin/Staff, restituisce tutti i posti bloccati in assoluto.
+    Se gruppo_corso è None o l'utente è Admin/Staff, restituisce tutti i posti bloccati in assoluto.
     """
     eventi = get_eventi_giorno(data_str)
     bloccati = {}
@@ -377,7 +377,7 @@ def get_numero_studenti_per_gruppo():
         pass
     return counts
 
-# --- CALCOLO QUOTE DINAMICO IN BASE AI POSTI ACCESSIBILI PER CIASCUN CORSO ---
+# --- CALCOLO QUOTE DINAMICO BASATO SUI POOL DI POSTI CONDIVISI ---
 def calcola_quote_posti(data_obj):
     data_str = data_obj.strftime("%Y-%m-%d")
     stati_corsi = get_stato_presenze_corsi(data_obj)
@@ -405,27 +405,35 @@ def calcola_quote_posti(data_obj):
             if n_eff > 0:
                 corsi_attivi_oggi.append(g)
 
-    totale_studenti_attivi_oggi = sum(studenti_effettivi_oggi.values())
-    
-    # 3. Calcolo quota proporzionale sui posti accessibili a quel corso
-    quote = {}
+    # 3. Raggruppa i corsi che condividono lo STESSO ESATTO INSIEME DI POSTI ACCESSIBILI (POOL)
+    gruppi_per_pool_posti = {}
     for g in GRUPPI_STUDENTI.keys():
-        n_eff = studenti_effettivi_oggi.get(g, 0)
-        n_accessibili = len(posti_accessibili_per_corso[g])
-        
-        if n_eff == 0 or n_accessibili == 0:
-            quote[g] = 0
-            continue
+        pool_key = tuple(sorted(posti_accessibili_per_corso[g]))
+        if pool_key not in gruppi_per_pool_posti:
+            gruppi_per_pool_posti[pool_key] = []
+        gruppi_per_pool_posti[pool_key].append(g)
+
+    # 4. Calcola la quota per ciascun corso in proporzione AGLI STUDENTI DEL SUO SPECIFICO POOL
+    quote = {}
+    for pool_key, lista_corsi_pool in gruppi_per_pool_posti.items():
+        totale_posti_pool = len(pool_key)
+        totale_studenti_pool = sum(studenti_effettivi_oggi.get(g, 0) for g in lista_corsi_pool)
+
+        for g in lista_corsi_pool:
+            n_eff = studenti_effettivi_oggi.get(g, 0)
+            if n_eff == 0 or totale_posti_pool == 0:
+                quote[g] = 0
+                continue
+                
+            # Minimo 2 persone per auto -> Cap massimo carpooling per questo gruppo
+            cap_carpooling = math.ceil(n_eff / 2)
             
-        # Minimo 2 persone per auto -> Cap massimo carpooling per questo gruppo
-        cap_carpooling = math.ceil(n_eff / 2)
-        
-        if totale_studenti_attivi_oggi > 0:
-            q_prop = max(1, round((n_eff / totale_studenti_attivi_oggi) * n_accessibili))
-        else:
-            q_prop = 0
-            
-        quote[g] = min(q_prop, cap_carpooling)
+            if totale_studenti_pool > 0 and totale_posti_pool > 0:
+                q_prop = max(1, round((n_eff / totale_studenti_pool) * totale_posti_pool))
+            else:
+                q_prop = 0
+                
+            quote[g] = min(q_prop, cap_carpooling)
         
     return quote, corsi_attivi_oggi, studenti_iscritti_counts, stati_corsi, studenti_effettivi_oggi, posti_accessibili_per_corso
 
@@ -756,7 +764,7 @@ if not is_admin_or_segreteria:
         if is_student:
             n_accessibili_user = len(posti_accessibili_per_corso.get(gruppo_utente, []))
             if n_accessibili_user == 0:
-                st.error(f"🚫 **PRENOTAZIONI SOSPESE PER IL TUO CORSO!**\nPer la data **{data_visiva}** le prenotazioni per il corso **{gruppo_utente}** sono state bloccate a causa di un evento in programma.")
+                st.error(f"🚫 **PRENOTAZIONI SOSPESE PER IL TUO CORSO!**\nPer la data **{data_visiva}** non ci sono posti disponibili per il tuo corso **{gruppo_utente}** a causa degli eventi in programma.")
                 st.stop()
 
         # Selezione Targa se l'utente ne ha registrate più di una
@@ -793,7 +801,7 @@ if not is_admin_or_segreteria:
                 if pr.get("data") == data_str and pr.get("utente_id") in alloggiati_stesso_gruppo and pr.get("posto_id") == "ALLOGGI":
                     confermati_oggi += 1
 
-            st.info(f"🏠 **Stato {nome_grp_alloggi} per il {data_visiva}:**\n**{confermati_oggi} su {totale_gruppo_alloggi}** studenti alloggiati del tuo gruppo hanno già confermato la presenza in auto per questa data.")
+            st.info(f"🏠 **Stato {nome_grp_alloggi} per il {data_visiva}:**\n**{confermati_oggi} su {totale_gruppo_alloggi}** studenti alloggiati del tuo gruppo hanno già confermati la presenza in auto per questa data.")
 
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             selected_passengers = st.multiselect(

@@ -232,6 +232,7 @@ def genera_excel_evento(ev, POSTI_PER_ZONA):
         {"Parametro": "Nome Evento", "Valore": ev.get("nome_evento")},
         {"Parametro": "Data Evento", "Valore": ev.get("data")},
         {"Parametro": "Zone Bloccate", "Valore": ev.get("blocchi")},
+        {"Parametro": "Classi Bloccate", "Valore": ev.get("classi_bloccate", "TUTTE")},
         {"Parametro": "Totale Posti Riservati", "Valore": len(rows)},
         {"Parametro": "Note Generali Evento", "Valore": ev.get("note", "")}
     ]
@@ -701,6 +702,19 @@ if not is_admin_or_segreteria:
             st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
             st.stop()
 
+        # --- VERIFICA BLOCCA PRENOTAZIONI PER CORSO CAUSA EVENTI ---
+        if is_student:
+            for ev in eventi_oggi:
+                c_bloccate_raw = ev.get("classi_bloccate") or "TUTTE"
+                if isinstance(c_bloccate_raw, str):
+                    c_bloccate_list = [c.strip() for c in c_bloccate_raw.split(",")]
+                else:
+                    c_bloccate_list = c_bloccate_raw if isinstance(c_bloccate_raw, list) else ["TUTTE"]
+
+                if "TUTTE" in c_bloccate_list or gruppo_utente in c_bloccate_list:
+                    st.error(f"🚫 **PRENOTAZIONI SOSPESE PER IL TUO CORSO!**\nPer la data **{data_visiva}** le prenotazioni per il corso **{gruppo_utente}** sono state bloccate a causa dell'evento: **{ev.get('nome_evento')}**.")
+                    st.stop()
+
         # Selezione Targa se l'utente ne ha registrate più di una
         if len(targhe_utente_list) > 1:
             targa_selezionata_booking = st.selectbox("🏎️ Seleziona quale auto/targa stai usando per questa prenotazione:", options=targhe_utente_list, key="sb_targa_booking_user")
@@ -1146,6 +1160,15 @@ else:
             note_evento = st.text_area("Note Generali Evento:", placeholder="Es. Riservato Relatori / Ospiti Esterni")
             opzioni_blocchi = ["TUTTI", "Zona Gialla", "Zona Verde", "Zona Rossa", "Zona Blu", "Zona Grigia", "Bassa", "Alta", "Piazzale", "Staff", "Docenti", "Alloggi"]
             blocchi_selezionati = st.multiselect("Blocchi / Zone Evento da Bloccare:", options=opzioni_blocchi, default=["TUTTI"])
+            
+            opzioni_classi = ["TUTTE"] + list(GRUPPI_STUDENTI.keys())
+            classi_selezionate = st.multiselect(
+                "🎓 Classi / Corsi da bloccare per questo evento:",
+                options=opzioni_classi,
+                default=["TUTTE"],
+                key="ms_classi_event"
+            )
+            
         posti_interessati = []
         if "TUTTI" in blocchi_selezionati:
             posti_interessati = list(POSTI.keys())
@@ -1169,13 +1192,18 @@ else:
                 st.error("Inserisci un nome per l'evento.")
             elif not blocchi_selezionati:
                 st.error("Seleziona almeno un blocco o zona di parcheggi.")
+            elif not classi_selezionate:
+                st.error("Seleziona almeno una classe da bloccare o 'TUTTE'.")
             else:
                 str_blocchi = "TUTTI" if "TUTTI" in blocchi_selezionati else ",".join(blocchi_selezionati)
+                str_classi = "TUTTE" if "TUTTE" in classi_selezionate else ",".join(classi_selezionate)
+                
                 supabase.table("eventi").insert({
                     "data": data_evento.strftime("%Y-%m-%d"),
                     "nome_evento": nome_evento.strip(),
                     "note": note_evento.strip(),
                     "blocchi": str_blocchi,
+                    "classi_bloccate": str_classi,
                     "dettagli_posti": json.dumps(dettagli_posti)
                 }).execute()
                 st.success(f"🎉 Evento '{nome_evento}' creato!")
@@ -1189,11 +1217,12 @@ else:
                     ev_id = ev.get("id")
                     ev_dt = ev.get("data")
                     ev_nm = ev.get("nome_evento")
+                    ev_c_bloc = ev.get("classi_bloccate", "TUTTE")
                     
                     col_ev1, col_ev2, col_ev3, col_ev4 = st.columns([2, 3, 2, 1])
                     col_ev1.write(f"📅 **{ev_dt}**")
                     col_ev2.write(f"🎉 **{ev_nm}**")
-                    col_ev3.write(f"🚫 Blocchi: `{ev.get('blocchi')}`")
+                    col_ev3.write(f"🚫 Blocchi: `{ev.get('blocchi')}`\n🎓 Classi: `{ev_c_bloc}`")
                     
                     if col_ev4.button("🗑️ Eliminare", key=f"del_ev_{ev_id}"):
                         supabase.table("eventi").delete().eq("id", ev_id).execute()
@@ -1219,6 +1248,10 @@ else:
                             b_def = [b.strip() for b in curr_b.split(",")] if isinstance(curr_b, str) else (curr_b if isinstance(curr_b, list) else ["TUTTI"])
                             m_blocchi = st.multiselect("Blocchi / Zone Parcheggio:", options=opzioni_blocchi, default=b_def)
                             
+                            curr_c = ev.get("classi_bloccate", "TUTTE")
+                            c_def = [c.strip() for c in curr_c.split(",")] if isinstance(curr_c, str) else (curr_c if isinstance(curr_c, list) else ["TUTTE"])
+                            m_classi = st.multiselect("🎓 Classi / Corsi bloccati:", options=opzioni_classi, default=c_def, key=f"ms_classi_mod_{ev_id}")
+
                             det_p_curr = ev.get("dettagli_posti") or {}
                             if isinstance(det_p_curr, str):
                                 try:
@@ -1247,10 +1280,13 @@ else:
                                     m_dettagli[p_k] = val_input.strip()
                             if st.form_submit_button("Salva Modifiche Evento 💾", use_container_width=True):
                                 str_m_blocchi = "TUTTI" if "TUTTI" in m_blocchi else ",".join(m_blocchi)
+                                str_m_classi = "TUTTE" if "TUTTE" in m_classi else ",".join(m_classi)
+                                
                                 supabase.table("eventi").update({
                                     "nome_evento": m_nome.strip(),
                                     "note": m_note.strip(),
                                     "blocchi": str_m_blocchi,
+                                    "classi_bloccate": str_m_classi,
                                     "dettagli_posti": json.dumps(m_dettagli)
                                 }).eq("id", ev_id).execute()
                                 st.success("Dettagli evento aggiornati!")

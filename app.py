@@ -15,25 +15,25 @@ url: str = st.secrets["SUPABASE_URL"]
 key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
-# --- CONFIGURAZIONE GRUPPI STUDENTI & GIORNI PREDEFINITI ---
+# --- CONFIGURAZIONE GRUPPI STUDENTI, GIORNI & ZONE ASSEGNATE ---
 GRUPPI_STUDENTI = {
     # GRUPPO 1: Lunedì - Martedì - Mercoledì
-    "Marketing 1":              {"giorni_default": [0, 1, 2]},
-    "Marketing 2":              {"giorni_default": [0, 1, 2]},
-    "Wine Sales 1":             {"giorni_default": [0, 1, 2]},
-    "Food Quality Management 1": {"giorni_default": [0, 1, 2]},
-    "Filiere Gastronomiche 2":  {"giorni_default": [0, 1, 2]},
+    "Marketing 1":              {"giorni_default": [0, 1, 2], "zone_assegnate": ["Alta"]},
+    "Marketing 2":              {"giorni_default": [0, 1, 2], "zone_assegnate": ["Alta"]},
+    "Wine Sales 1":             {"giorni_default": [0, 1, 2], "zone_assegnate": ["Bassa", "Piazzale", "Alta"]},
+    "Food Quality Management 1": {"giorni_default": [0, 1, 2], "zone_assegnate": ["Bassa", "Piazzale", "Alta"]},
+    "Filiere Gastronomiche 2":  {"giorni_default": [0, 1, 2], "zone_assegnate": ["Bassa", "Piazzale", "Alta"]},
 
     # GRUPPO 2: Mercoledì - Giovedì - Venerdì
-    "Sistemi Zootecnici 1":     {"giorni_default": [2, 3, 4]},
-    "Sistemi Zootecnici 2":     {"giorni_default": [2, 3, 4]},
-    "Enologia e Viticoltura 1": {"giorni_default": [2, 3, 4]},
+    "Sistemi Zootecnici 1":     {"giorni_default": [2, 3, 4], "zone_assegnate": ["Bassa"]},
+    "Sistemi Zootecnici 2":     {"giorni_default": [2, 3, 4], "zone_assegnate": ["Bassa"]},
+    "Enologia e Viticoltura 1": {"giorni_default": [2, 3, 4], "zone_assegnate": ["Bassa", "Piazzale", "Alta"]},
     
     # Disattivato fino a Febbraio
-    "Enologia e Viticoltura 2": {"giorni_default": []}, 
+    "Enologia e Viticoltura 2": {"giorni_default": [],         "zone_assegnate": ["Bassa", "Piazzale", "Alta"]}, 
     
-    "Precision Farming 1":      {"giorni_default": [2, 3, 4]},
-    "Agricoltura 4.0 2":        {"giorni_default": [2, 3, 4]},
+    "Precision Farming 1":      {"giorni_default": [2, 3, 4], "zone_assegnate": ["Bassa", "Piazzale", "Alta"]},
+    "Agricoltura 4.0 2":        {"giorni_default": [2, 3, 4], "zone_assegnate": ["Bassa", "Piazzale", "Alta"]},
 }
 
 MAPPA_GIORNI_SETTIMANA = {
@@ -46,8 +46,6 @@ MAPPA_GIORNI_SETTIMANA = {
     "Domenica": 6
 }
 
-# Totale effettivo posti prenotabili (15 Bassa + 17 Piazzale + 18 Alta - 2 Inagibili = 48 Posti)
-TOTALE_POSTI_STUDENTI = 48  
 DATA_PERMANENTE = "2099-12-31"
 
 POSTI_PER_ZONA = {
@@ -58,6 +56,8 @@ POSTI_PER_ZONA = {
     "Docenti": [f"Docenti-{i}" for i in range(1, 8)],
     "Alloggi": [f"Alloggi-{i}" for i in range(1, 14)]
 }
+
+POSTI_STUDENTI_TOTALI_LISTA = POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Piazzale"] + POSTI_PER_ZONA["Alta"]
 
 POSTI = {}
 for lista in POSTI_PER_ZONA.values():
@@ -248,63 +248,7 @@ def genera_excel_evento(ev, POSTI_PER_ZONA):
     buffer.seek(0)
     return buffer
 
-# --- CALCOLO DINAMICO QUOTE & PRESENZE (MINIMO 2 STUDENTI PER AUTO) ---
-def get_corsi_presenti(data_obj):
-    giorno_sett = data_obj.weekday()
-    data_str = data_obj.strftime("%Y-%m-%d")
-    presenti = set([grp for grp, info in GRUPPI_STUDENTI.items() if giorno_sett in info["giorni_default"]])
-    
-    try:
-        res = supabase.table("presenze_corsi").select("gruppo, stato").eq("data", data_str).execute()
-        if res.data:
-            for row in res.data:
-                grp, st_val = row["gruppo"], row["stato"]
-                if st_val == "PRESENTE":
-                    presenti.add(grp)
-                elif st_val == "ASSENTE" and grp in presenti:
-                    presenti.remove(grp)
-    except Exception:
-        pass
-        
-    return list(presenti)
-
-def get_numero_studenti_per_gruppo():
-    counts = {grp: 0 for grp in GRUPPI_STUDENTI.keys()}
-    try:
-        res = supabase.table("utenti").select("*").execute()
-        if res.data:
-            for u in res.data:
-                grp = u.get("gruppo")
-                if not check_is_alloggi(u) and grp in counts:
-                    counts[grp] += 1
-    except Exception:
-        pass
-    return counts
-
-def calcola_quote_posti(data_obj):
-    corsi_pres = get_corsi_presenti(data_obj)
-    studenti_counts = get_numero_studenti_per_gruppo()
-    totale_studenti_oggi = sum(studenti_counts.get(g, 0) for g in corsi_pres)
-    
-    quote = {}
-    for g in corsi_pres:
-        n_stud = studenti_counts.get(g, 0)
-        if n_stud == 0:
-            quote[g] = 0
-            continue
-            
-        # Minimo 2 persone per auto
-        cap_carpooling = math.ceil(n_stud / 2)
-        
-        if totale_studenti_oggi > 0:
-            q_prop = max(1, round((n_stud / totale_studenti_oggi) * TOTALE_POSTI_STUDENTI))
-        else:
-            q_prop = max(1, TOTALE_POSTI_STUDENTI // len(corsi_pres))
-            
-        quote[g] = min(q_prop, cap_carpooling)
-        
-    return quote, corsi_pres, studenti_counts
-
+# --- RECUPERO EVENTI E POSTI BLOCCATI ---
 def get_eventi_giorno(data_str):
     try:
         res = supabase.table("eventi").select("*").eq("data", data_str).execute()
@@ -384,6 +328,113 @@ def get_posti_bloccati_evento(data_str, is_staff_or_admin=False):
                     "zona_evento": z_ev
                 }
     return bloccati
+
+def get_stato_presenze_corsi(data_obj):
+    giorno_sett = data_obj.weekday()
+    data_str = data_obj.strftime("%Y-%m-%d")
+    stati = {}
+    
+    for grp, info in GRUPPI_STUDENTI.items():
+        is_def = giorno_sett in info["giorni_default"]
+        stati[grp] = "PRESENTE" if is_def else "ASSENTE"
+        
+    try:
+        res = supabase.table("presenze_corsi").select("gruppo, stato").eq("data", data_str).execute()
+        if res.data:
+            for row in res.data:
+                stati[row["gruppo"]] = row["stato"]
+    except Exception:
+        pass
+        
+    return stati
+
+def get_numero_studenti_per_gruppo():
+    counts = {grp: 0 for grp in GRUPPI_STUDENTI.keys()}
+    try:
+        res = supabase.table("utenti").select("*").execute()
+        if res.data:
+            for u in res.data:
+                grp = u.get("gruppo")
+                if not check_is_alloggi(u) and grp in counts:
+                    counts[grp] += 1
+    except Exception:
+        pass
+    return counts
+
+# --- CALCOLO QUOTE DINAMICO RIPARTITO SULLE ZONE SPECIFICHE ASSEGNATE AI CORSI ---
+def calcola_quote_posti(data_obj):
+    data_str = data_obj.strftime("%Y-%m-%d")
+    stati_corsi = get_stato_presenze_corsi(data_obj)
+    studenti_iscritti_counts = get_numero_studenti_per_gruppo()
+    
+    # 1. Calcolo Posti Liberi Reali per ciascuna Zona Studenti (Bassa, Piazzale, Alta)
+    posti_bloccati_eventi = get_posti_bloccati_evento(data_str)
+    
+    posti_disponibili_per_zona = {}
+    for z_name in ["Bassa", "Piazzale", "Alta"]:
+        lista_p = POSTI_PER_ZONA[z_name]
+        posti_liberi = [p for p in lista_p if p not in posti_bloccati_eventi]
+        posti_disponibili_per_zona[z_name] = len(posti_liberi)
+        
+    posti_studenti_disponibili_oggi = sum(posti_disponibili_per_zona.values())
+    
+    # 2. Classi bloccate da Eventi
+    eventi_oggi = get_eventi_giorno(data_str)
+    classi_bloccate_eventi = set()
+    for ev in eventi_oggi:
+        raw_c = ev.get("classi_bloccate") or "TUTTE"
+        c_list = [c.strip() for c in raw_c.split(",")] if isinstance(raw_c, str) else (raw_c if isinstance(raw_c, list) else ["TUTTE"])
+        if "TUTTE" in c_list:
+            classi_bloccate_eventi.update(GRUPPI_STUDENTI.keys())
+        else:
+            classi_bloccate_eventi.update(c_list)
+
+    # 3. Calcolo numero di studenti effettivi oggi considerando "METÀ CLASSE" e "ASSENTE"
+    studenti_effettivi_oggi = {}
+    corsi_attivi_oggi = []
+    
+    for g, st_val in stati_corsi.items():
+        if g in classi_bloccate_eventi or st_val == "ASSENTE":
+            studenti_effettivi_oggi[g] = 0
+        else:
+            n_iscritti = studenti_iscritti_counts.get(g, 0)
+            n_eff = math.ceil(n_iscritti / 2) if st_val == "META_CLASSE" else n_iscritti
+            studenti_effettivi_oggi[g] = n_eff
+            if n_eff > 0:
+                corsi_attivi_oggi.append(g)
+
+    # 4. Raggruppamento dei corsi per Pool di Zone Assegnate
+    quote = {}
+    gruppi_per_pool_zone = {}
+    
+    for g in GRUPPI_STUDENTI.keys():
+        zone_g = tuple(sorted(GRUPPI_STUDENTI[g].get("zone_assegnate", ["Bassa", "Piazzale", "Alta"])))
+        if zone_g not in gruppi_per_pool_zone:
+            gruppi_per_pool_zone[zone_g] = []
+        gruppi_per_pool_zone[zone_g].append(g)
+
+    # 5. Ripartizione delle quote specifica per ogni pool di zone
+    for pool_zone, lista_gruppi_pool in gruppi_per_pool_zone.items():
+        posti_pool_disponibili = sum(posti_disponibili_per_zona.get(z, 0) for z in pool_zone)
+        tot_stud_pool = sum(studenti_effettivi_oggi.get(g, 0) for g in lista_gruppi_pool)
+
+        for g in lista_gruppi_pool:
+            n_eff = studenti_effettivi_oggi.get(g, 0)
+            if n_eff == 0 or g in classi_bloccate_eventi:
+                quote[g] = 0
+                continue
+            
+            # Limite carpooling (min 2 persone per auto)
+            cap_carpooling = math.ceil(n_eff / 2)
+            
+            if tot_stud_pool > 0 and posti_pool_disponibili > 0:
+                q_prop = max(1, round((n_eff / tot_stud_pool) * posti_pool_disponibili))
+            else:
+                q_prop = 0
+            
+            quote[g] = min(q_prop, cap_carpooling)
+        
+    return quote, corsi_attivi_oggi, studenti_iscritti_counts, stati_corsi, studenti_effettivi_oggi, posti_studenti_disponibili_oggi, classi_bloccate_eventi, posti_disponibili_per_zona
 
 def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_turno):
     try:
@@ -659,7 +710,7 @@ except Exception as e:
 # --- 7. LOGICA PRENOTAZIONI UTENTI ---
 st.divider()
 
-quote_dinamiche, corsi_presenti_oggi, numero_iscritti = calcola_quote_posti(data_scelta)
+quote_dinamiche, corsi_attivi_oggi, numero_iscritti, stati_corsi_oggi, studenti_effettivi_oggi, posti_studenti_disponibili_oggi, classi_bloccate_eventi, posti_disponibili_per_zona = calcola_quote_posti(data_scelta)
 
 def ottieni_posti_liberi_zona(prefisso_lista):
     posti_liberi = []
@@ -704,16 +755,9 @@ if not is_admin_or_segreteria:
 
         # --- VERIFICA BLOCCA PRENOTAZIONI PER CORSO CAUSA EVENTI ---
         if is_student:
-            for ev in eventi_oggi:
-                c_bloccate_raw = ev.get("classi_bloccate") or "TUTTE"
-                if isinstance(c_bloccate_raw, str):
-                    c_bloccate_list = [c.strip() for c in c_bloccate_raw.split(",")]
-                else:
-                    c_bloccate_list = c_bloccate_raw if isinstance(c_bloccate_raw, list) else ["TUTTE"]
-
-                if "TUTTE" in c_bloccate_list or gruppo_utente in c_bloccate_list:
-                    st.error(f"🚫 **PRENOTAZIONI SOSPESE PER IL TUO CORSO!**\nPer la data **{data_visiva}** le prenotazioni per il corso **{gruppo_utente}** sono state bloccate a causa dell'evento: **{ev.get('nome_evento')}**.")
-                    st.stop()
+            if gruppo_utente in classi_bloccate_eventi:
+                st.error(f"🚫 **PRENOTAZIONI SOSPESE PER IL TUO CORSO!**\nPer la data **{data_visiva}** le prenotazioni per il corso **{gruppo_utente}** sono state bloccate a causa di un evento in programma.")
+                st.stop()
 
         # Selezione Targa se l'utente ne ha registrate più di una
         if len(targhe_utente_list) > 1:
@@ -840,7 +884,8 @@ if not is_admin_or_segreteria:
                     st.info(f"Le prenotazioni per la settimana del **{data_scelta.strftime('%d/%m/%Y')}** si apriranno **Venerdì {open_datetime.strftime('%d/%m/%Y')} alle ore 9:00**.")
                     st.stop()
 
-            if gruppo_utente not in corsi_presenti_oggi:
+            st_presenza_curr = stati_corsi_oggi.get(gruppo_utente, "ASSENTE")
+            if st_presenza_curr == "ASSENTE":
                 st.error(f"❌ Il gruppo **{gruppo_utente}** non risulta presente/in lezione il giorno **{data_visiva}**.")
                 st.stop()
             
@@ -857,7 +902,11 @@ if not is_admin_or_segreteria:
                 if u_grp == gruppo_utente and not check_is_alloggi(u_inf):
                     occupati_gruppo += 1
             
-            st.info(f"📊 **Quota del tuo corso ({gruppo_utente}) per oggi**: **{occupati_gruppo}/{max_quota}** posti auto (regola min 2 persone/auto).")
+            zone_consentite_grp = GRUPPI_STUDENTI.get(gruppo_utente, {}).get("zone_assegnate", ["Bassa", "Piazzale", "Alta"])
+            posti_liberi_zona_grp = sum(posti_disponibili_per_zona.get(z, 0) for z in zone_consentite_grp)
+            
+            lbl_presenza_txt = " (METÀ CLASSE)" if st_presenza_curr == "META_CLASSE" else ""
+            st.info(f"📊 **Quota del tuo corso ({gruppo_utente}{lbl_presenza_txt}) per oggi**: **{occupati_gruppo}/{max_quota}** auto.\n📍 **Zone Assegnate al tuo corso**: `{', '.join(zone_consentite_grp)}` ({posti_liberi_zona_grp} posti liberi totali nella tua zona oggi).")
             
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             
@@ -875,7 +924,12 @@ if not is_admin_or_segreteria:
                     if not selected_passengers:
                         st.error("❌ **ATTENZIONE**: Devi selezionare **almeno un passeggero** che viaggia con te per poter prenotare (regola carpooling)!")
                     else:
-                        candidati_studenti = ottieni_posti_liberi_zona(POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Piazzale"] + POSTI_PER_ZONA["Alta"])
+                        # Estrai solo i posti appartenenti alle zone assegnate a QUESTO specifico corso
+                        lista_posti_target_corso = []
+                        for z_c in zone_consentite_grp:
+                            lista_posti_target_corso.extend(POSTI_PER_ZONA.get(z_c, []))
+                            
+                        candidati_studenti = ottieni_posti_liberi_zona(lista_posti_target_corso)
                         
                         if candidati_studenti:
                             p_ids = [u["id"] for u in selected_passengers]
@@ -887,14 +941,14 @@ if not is_admin_or_segreteria:
                             
                             if ok:
                                 cod_num = get_codice_mappa(esito)
-                                st.success(f"🎉 Ti è stato assegnato il **posto numero {cod_num}** (Targa: `{targa_selezionata_booking}`) con {len(selected_passengers)} passeggeri registrati!")
+                                st.success(f"🎉 Ti è stato assegnato il **posto numero {cod_num}** nella zona **{get_zona_evento(esito)}** (Targa: `{targa_selezionata_booking}`) con {len(selected_passengers)} passeggeri registrati!")
                                 st.rerun()
                             elif esito == "HAI_GIA_PRENOTATO":
                                 st.warning("⚠️ Risulti già in possesso di una prenotazione per questa data.")
                             else:
-                                st.error("❌ I posti liberi sono stati appena occupati da altri utenti. Riprova.")
+                                st.error("❌ I posti liberi della tua zona sono stati appena occupati da altri utenti. Riprova.")
                         else:
-                            st.error("❌ Tutti i posti studenti sono occupati o bloccati per eventi.")
+                            st.error(f"❌ Tutti i posti della tua zona (`{', '.join(zone_consentite_grp)}`) sono attualmente occupati o bloccati.")
 
 # --- 8. PANNELLO AMMINISTRAZIONE & SEGRETERIA ---
 else:
@@ -1295,46 +1349,77 @@ else:
         except Exception as ex_ev_list:
             st.info(f"Nessun evento caricato: {ex_ev_list}")
 
-    # TAB 4: PRESENZE CORSI
+    # TAB 4: PRESENZE CORSI (CON OPZIONE METÀ CLASSE)
     with tab4:
         st.write(f"### 🗓️ Presenza Corsi in Lezione - {data_visiva}")
-        res_eccez = {}
-        try:
-            r_ec = supabase.table("presenze_corsi").select("gruppo, stato").eq("data", data_str).execute()
-            if r_ec.data:
-                res_eccez = {row["gruppo"]: row["stato"] for row in r_ec.data}
-        except Exception:
-            pass
+        st.caption("Puoi specificare se la classe è interamente presente, presente a metà o assente per ricalcolare automaticamente le quote auto.")
         
         col_c1, col_c2 = st.columns(2)
         idx = 0
+        opzioni_stato = ["PRESENTE", "METÀ CLASSE", "ASSENTE"]
+        
         for grp in GRUPPI_STUDENTI.keys():
             col_target = col_c1 if idx % 2 == 0 else col_c2
             idx += 1
-            is_def = data_scelta.weekday() in GRUPPI_STUDENTI[grp]["giorni_default"]
-            stato_curr = res_eccez.get(grp, "PRESENTE" if is_def else "ASSENTE")
+            
+            stato_curr = stati_corsi_oggi.get(grp, "ASSENTE")
+            idx_sel = 0
+            if stato_curr == "META_CLASSE":
+                idx_sel = 1
+            elif stato_curr == "ASSENTE":
+                idx_sel = 2
             
             with col_target:
-                scelta = st.radio(f"**{grp}**:", ["PRESENTE", "ASSENTE"], index=0 if stato_curr == "PRESENTE" else 1, key=f"pres_{grp}_{data_str}", horizontal=True)
-                if scelta != stato_curr:
+                scelta = st.radio(
+                    f"**{grp}**:", 
+                    options=opzioni_stato, 
+                    index=idx_sel, 
+                    key=f"pres_{grp}_{data_str}", 
+                    horizontal=True
+                )
+                
+                # Mappa opzione interfaccia -> valore database
+                val_db = "META_CLASSE" if scelta == "METÀ CLASSE" else scelta
+                
+                if val_db != stato_curr:
                     res_chk = supabase.table("presenze_corsi").select("data, gruppo").eq("data", data_str).eq("gruppo", grp).execute()
                     if res_chk.data:
-                        supabase.table("presenze_corsi").update({"stato": scelta}).eq("data", data_str).eq("gruppo", grp).execute()
+                        supabase.table("presenze_corsi").update({"stato": val_db}).eq("data", data_str).eq("gruppo", grp).execute()
                     else:
-                        supabase.table("presenze_corsi").insert({"data": data_str, "gruppo": grp, "stato": scelta}).execute()
-                    st.success(f"Aggiornata presenza per {grp}!")
+                        supabase.table("presenze_corsi").insert({"data": data_str, "gruppo": grp, "stato": val_db}).execute()
+                    st.success(f"Aggiornata presenza per {grp} ({scelta})!")
                     st.rerun()
 
-    # TAB 5: REPORT E QUOTE
+    # TAB 5: REPORT E QUOTE (DETTAGLIATO CON METÀ CLASSE E ZONE SPECIFICHE)
     with tab5:
-        st.write("### 📊 Quote Posti Calcolate per Oggi (Carpooling Applicato)")
+        st.write(f"### 📊 Quote Posti Calcolate per il {data_visiva}")
+        
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("Bassa (Liberi Oggi)", posti_disponibili_per_zona.get("Bassa", 0))
+        col_m2.metric("Piazzale (Liberi Oggi)", posti_disponibili_per_zona.get("Piazzale", 0))
+        col_m3.metric("Alta (Liberi Oggi)", posti_disponibili_per_zona.get("Alta", 0))
         
         prenotazioni_oggi = [pr for pr in prenotazioni_raw if pr.get("data") == data_str]
         
         table_rows = []
         for grp in GRUPPI_STUDENTI.keys():
-            is_present = grp in corsi_presenti_oggi
-            q_max = quote_dinamiche.get(grp, 0) if is_present else 0
+            st_val = stati_corsi_oggi.get(grp, "ASSENTE")
+            is_bloccato_ev = grp in classi_bloccate_eventi
+            zone_assegnate_list = GRUPPI_STUDENTI.get(grp, {}).get("zone_assegnate", ["Bassa", "Piazzale", "Alta"])
+            posti_liberi_zona_grp = sum(posti_disponibili_per_zona.get(z, 0) for z in zone_assegnate_list)
+            
+            if is_bloccato_ev:
+                badge_st = "BLOCCATO EVENTO ⛔"
+            elif st_val == "PRESENTE":
+                badge_st = "PRESENTE 🟢"
+            elif st_val == "META_CLASSE":
+                badge_st = "METÀ CLASSE 🟡"
+            else:
+                badge_st = "ASSENTE 🔴"
+
+            q_max = quote_dinamiche.get(grp, 0)
+            n_tot_iscr = numero_iscritti.get(grp, 0)
+            n_eff_oggi = studenti_effettivi_oggi.get(grp, 0)
             
             prenotati_grp = 0
             for pr in prenotazioni_oggi:
@@ -1347,15 +1432,17 @@ else:
                 if u_inf.get("gruppo") == grp and not check_is_alloggi(u_inf):
                     prenotati_grp += 1
                     
-            q_residua = max(0, q_max - prenotati_grp) if is_present else 0
+            q_residua = max(0, q_max - prenotati_grp)
             
             table_rows.append({
                 "Corso": grp,
-                "Stato Oggi": "PRESENTE 🟢" if is_present else "ASSENTE 🔴",
-                "Iscritti (No Alloggi)": numero_iscritti.get(grp, 0),
-                "Quota Max Auto": q_max,
+                "Zone Assegnate": ", ".join(zone_assegnate_list),
+                "Stato Oggi": badge_st,
+                "Stud. Effettivi Oggi": n_eff_oggi,
+                "Posti Liberi Nella Zona": posti_liberi_zona_grp,
+                "Quota Auto Assegnata": q_max,
                 "Auto Prenotate": prenotati_grp,
-                "Quota Residua (Disponibili)": q_residua
+                "Quota Residua (Libere)": q_residua
             })
             
         df_quote = pd.DataFrame(table_rows)

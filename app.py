@@ -23,7 +23,6 @@ GRUPPI_STUDENTI = {
     "Wine Sales 1":             {"giorni_default": [0, 1, 2]},
     "Food Quality Management 1": {"giorni_default": [0, 1, 2]},
     "Filiere Gastronomiche 2":  {"giorni_default": [0, 1, 2]},
-
     # GRUPPO 2: Mercoledì - Giovedì - Venerdì
     "Sistemi Zootecnici 1":     {"giorni_default": [2, 3, 4]},
     "Sistemi Zootecnici 2":     {"giorni_default": [2, 3, 4]},
@@ -58,7 +57,6 @@ POSTI_PER_ZONA = {
 }
 
 POSTI_STUDENTI_TOTALI_LISTA = POSTI_PER_ZONA["Bassa"] + POSTI_PER_ZONA["Piazzale"] + POSTI_PER_ZONA["Alta"]
-
 POSTI = {}
 for lista in POSTI_PER_ZONA.values():
     for p in lista:
@@ -199,13 +197,10 @@ def genera_excel_evento(ev, POSTI_PER_ZONA):
             det_posti = {}
     elif not isinstance(det_posti, dict):
         det_posti = {}
-
     blocchi = ev.get("blocchi", "TUTTI")
     blocchi_list = [b.strip() for b in blocchi.split(",")] if isinstance(blocchi, str) else blocchi
-
     rows = []
     zone_count = {}
-
     for zona_p, lista_p in POSTI_PER_ZONA.items():
         for p_id in lista_p:
             z_ev = get_zona_evento(p_id)
@@ -225,7 +220,6 @@ def genera_excel_evento(ev, POSTI_PER_ZONA):
                     "Spunta Ingresso": "[   ]"
                 })
                 zone_count[z_ev] = zone_count.get(z_ev, 0) + 1
-
     df_posti = pd.DataFrame(rows)
     
     info_list = [
@@ -238,9 +232,7 @@ def genera_excel_evento(ev, POSTI_PER_ZONA):
     ]
     for z_name, c_val in zone_count.items():
         info_list.append({"Parametro": f"Posti in {z_name}", "Valore": c_val})
-
     df_info = pd.DataFrame(info_list)
-
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df_posti.to_excel(writer, index=False, sheet_name='Posti Evento (Da Stampare)')
@@ -257,10 +249,6 @@ def get_eventi_giorno(data_str):
         return []
 
 def get_posti_bloccati_evento_per_corso(data_str, gruppo_corso=None, is_staff_or_admin=False):
-    """
-    Restituisce i posti bloccati per un determinato gruppo/corso in base agli eventi del giorno.
-    Se gruppo_corso è None o l'utente è Admin/Staff, restituisce tutti i posti bloccati in assoluto.
-    """
     eventi = get_eventi_giorno(data_str)
     bloccati = {}
     
@@ -287,7 +275,6 @@ def get_posti_bloccati_evento_per_corso(data_str, gruppo_corso=None, is_staff_or
         "is_event": False,
         "zona_evento": "Zona Rossa"
     }
-
     for ev in eventi:
         ev_id = ev.get("id")
         ev_nome = ev.get("nome_evento", "Evento")
@@ -300,7 +287,6 @@ def get_posti_bloccati_evento_per_corso(data_str, gruppo_corso=None, is_staff_or
         else:
             c_bloccate_list = c_bloccate_raw if isinstance(c_bloccate_raw, list) else ["TUTTE"]
 
-        # Verifica se questo evento si applica al gruppo richiesto
         si_applica = is_staff_or_admin or (gruppo_corso is None) or ("TUTTE" in c_bloccate_list) or (gruppo_corso in c_bloccate_list)
         
         if not si_applica:
@@ -322,16 +308,14 @@ def get_posti_bloccati_evento_per_corso(data_str, gruppo_corso=None, is_staff_or
             
         for p_id in POSTI.keys():
             if p_id in ["Alta-7", "Alta-8"]:
-                continue # Mantiene prioritario il blocco non agibile
+                continue
             prefisso = p_id.split("-")[0]
             z_ev = get_zona_evento(p_id)
             if "TUTTI" in blocchi_list or prefisso in blocchi_list or z_ev in blocchi_list:
                 testo_specifico = ev_dettagli.get(p_id, "").strip()
                 if not testo_specifico:
                     testo_specifico = ev_note if ev_note else "Riservato Evento"
-
                 targa_visibile = testo_specifico if is_staff_or_admin else "Riservato Evento"
-
                 bloccati[p_id] = {
                     "id_prenotazione": f"ev_{ev_id}",
                     "utente_id": None,
@@ -383,14 +367,12 @@ def calcola_quote_posti(data_obj):
     stati_corsi = get_stato_presenze_corsi(data_obj)
     studenti_iscritti_counts = get_numero_studenti_per_gruppo()
     
-    # 1. Trova i posti studenti accessibili oggi PER CIASCUN CORSO
     posti_accessibili_per_corso = {}
     for g in GRUPPI_STUDENTI.keys():
         bloccati_g = get_posti_bloccati_evento_per_corso(data_str, gruppo_corso=g)
         accessibili = [p for p in POSTI_STUDENTI_TOTALI_LISTA if p not in bloccati_g]
         posti_accessibili_per_corso[g] = accessibili
 
-    # 2. Studenti effettivi oggi considerando PRESENTE, META_CLASSE e ASSENTE
     studenti_effettivi_oggi = {}
     corsi_attivi_oggi = []
     
@@ -405,7 +387,6 @@ def calcola_quote_posti(data_obj):
             if n_eff > 0:
                 corsi_attivi_oggi.append(g)
 
-    # 3. Raggruppa i corsi che condividono lo STESSO ESATTO INSIEME DI POSTI ACCESSIBILI (POOL)
     gruppi_per_pool_posti = {}
     for g in GRUPPI_STUDENTI.keys():
         pool_key = tuple(sorted(posti_accessibili_per_corso[g]))
@@ -413,19 +394,16 @@ def calcola_quote_posti(data_obj):
             gruppi_per_pool_posti[pool_key] = []
         gruppi_per_pool_posti[pool_key].append(g)
 
-    # 4. Calcola la quota per ciascun corso in proporzione AGLI STUDENTI DEL SUO SPECIFICO POOL
     quote = {}
     for pool_key, lista_corsi_pool in gruppi_per_pool_posti.items():
         totale_posti_pool = len(pool_key)
         totale_studenti_pool = sum(studenti_effettivi_oggi.get(g, 0) for g in lista_corsi_pool)
-
         for g in lista_corsi_pool:
             n_eff = studenti_effettivi_oggi.get(g, 0)
             if n_eff == 0 or totale_posti_pool == 0:
                 quote[g] = 0
                 continue
                 
-            # Minimo 2 persone per auto -> Cap massimo carpooling per questo gruppo
             cap_carpooling = math.ceil(n_eff / 2)
             
             if totale_studenti_pool > 0 and totale_posti_pool > 0:
@@ -444,7 +422,6 @@ def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_t
             return False, "HAI_GIA_PRENOTATO"
     except Exception:
         pass
-
     try:
         res_current = supabase.table("prenotazioni").select("posto_id").eq("data", data_target).execute()
         occupati_ora = set(r["posto_id"] for r in res_current.data) if res_current.data else set()
@@ -466,6 +443,8 @@ def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_t
             if res_ins.data:
                 return True, p_cand
         except Exception:
+            # Se un altro utente ha occupato questo posto nello stesso millisecondo (grazie al vincolo UNIQUE su DB),
+            # l'eccezione viene catturata e si passa subito al candidato successivo.
             occupati_ora.add(p_cand)
             continue
             
@@ -503,7 +482,6 @@ utente_loggato = st.session_state["utente_autenticato"]
 username = str(utente_loggato.get("username") or "")
 gruppo_utente = str(utente_loggato.get("gruppo") or "Marketing 1")
 targa_utente = str(utente_loggato.get("targa") or "")
-
 is_admin = (username.lower() == "admin")
 is_segreteria = (username.lower() == "segreteria" or gruppo_utente.lower() == "segreteria")
 is_admin_or_segreteria = is_admin or is_segreteria
@@ -520,7 +498,6 @@ if is_alloggi_user:
 
 targhe_utente_list = parse_targhe(targa_utente)
 targa_valida = len(targhe_utente_list) > 0
-
 if targa_valida:
     st.sidebar.success(f"Targhe: **{', '.join(targhe_utente_list)}** 🟢")
 else:
@@ -558,9 +535,7 @@ with st.sidebar.expander("🔑 Modifica Password"):
 st.sidebar.divider()
 st.sidebar.subheader("📅 Seleziona Giorno")
 oggi = date.today()
-
 max_data = oggi + datetime.timedelta(days=14) if (not is_admin_or_segreteria and not is_alloggi_user) else oggi + datetime.timedelta(days=365)
-
 data_scelta = st.sidebar.date_input("Data:", min_value=oggi, max_value=max_data, format="DD/MM/YYYY")
 data_str = data_scelta.strftime("%Y-%m-%d")
 data_visiva = data_scelta.strftime("%d/%m/%Y")
@@ -583,14 +558,14 @@ except Exception:
     except Exception:
         pass
 
-# --- 5. PREPARAZIONE DATI PER MAPPA CON PRIVACY & ZONE EVENTI (FILTRATO PER UTENTE) ---
+# --- 5. PREPARAZIONE DATI PER MAPPA CON PRIVACY & ZONE EVENTI ---
 posti_bloccati_eventi = get_posti_bloccati_evento_per_corso(
     data_str, 
     gruppo_corso=gruppo_utente if is_student else None, 
     is_staff_or_admin=is_staff_or_admin
 )
-prenotazioni_visibili = {}
 
+prenotazioni_visibili = {}
 for p_id, info_ev in posti_bloccati_eventi.items():
     prenotazioni_visibili[p_id] = info_ev
 
@@ -604,7 +579,6 @@ for p in prenotazioni_raw:
             info_u = info_u[0]
         elif not isinstance(info_u, dict):
             info_u = {}
-
         u_grp = info_u.get("gruppo", "")
         u_name = info_u.get("username", "")
         p_turno = str(p.get("turno", ""))
@@ -612,9 +586,7 @@ for p in prenotazioni_raw:
         
         pass_ids, pass_names = parse_passengers(p_turno)
         
-        # Riconoscimento posti bloccati dall'Admin
         is_admin_block = (u_id is None) or (u_name.lower() == "admin") or (p_turno == "BLOCCATO")
-
         if is_admin_block:
             prenotazioni_visibili[p_id] = {
                 "id_prenotazione": p.get("id"),
@@ -633,7 +605,6 @@ for p in prenotazioni_raw:
             
             is_staff_spot = str(p_id).startswith("Staff") or u_grp == "Staff"
             is_alloggi_spot = str(p_id).startswith("Alloggi") or check_is_alloggi(info_u)
-
             if is_student:
                 if is_my_car:
                     username_disp = u_name
@@ -655,7 +626,6 @@ for p in prenotazioni_raw:
                 username_disp = u_name
                 targa_disp = u_targa
                 pass_disp = ", ".join(pass_names) if pass_names else "-"
-
             prenotazioni_visibili[p_id] = {
                 "id_prenotazione": p.get("id"),
                 "utente_id": u_id,
@@ -714,7 +684,6 @@ except Exception as e:
 
 # --- 7. LOGICA PRENOTAZIONI UTENTI ---
 st.divider()
-
 quote_dinamiche, corsi_attivi_oggi, numero_iscritti, stati_corsi_oggi, studenti_effettivi_oggi, posti_accessibili_per_corso = calcola_quote_posti(data_scelta)
 
 def ottieni_posti_liberi_zona(lista_candidati_target, bloccati_dict=None):
@@ -746,34 +715,29 @@ if not is_admin_or_segreteria:
                 supabase.table("prenotazioni").delete().eq("id", mp["id"]).execute()
                 st.success("Prenotazione annullata!")
                 st.rerun()
-
     elif is_passenger_check:
         cod_num_p = get_codice_mappa(p_assigned_check) if is_student else p_assigned_check
         st.info(f"🚗 **Sei registrato come passeggero** nell'auto di **{driver_name_check}** (Posto numero **{cod_num_p}**) per il giorno **{data_visiva}**.")
         st.caption("Risultando già presente come passeggero, non puoi effettuare un'ulteriore prenotazione come conducente.")
-
     else:
         st.subheader("📌 Prenota il tuo Posto Auto")
-
         if not targa_valida:
             st.error("⚠️ **TARGA NON IMPOSTATA O NON VALIDA!**")
             st.info("Per poter prenotare un posto auto devi registrare una targa italiana valida (es. **AA123BB** - 2 lettere, 3 cifre, 2 lettere) nella barra laterale a sinistra.")
             st.stop()
 
-        # --- VERIFICA SE IL CORSO È COMPLETAMENTE BLOCCATO DA EVENTI ---
         if is_student:
             n_accessibili_user = len(posti_accessibili_per_corso.get(gruppo_utente, []))
             if n_accessibili_user == 0:
                 st.error(f"🚫 **PRENOTAZIONI SOSPESE PER IL TUO CORSO!**\nPer la data **{data_visiva}** non ci sono posti disponibili per il tuo corso **{gruppo_utente}** a causa degli eventi in programma.")
                 st.stop()
 
-        # Selezione Targa se l'utente ne ha registrate più di una
         if len(targhe_utente_list) > 1:
             targa_selezionata_booking = st.selectbox("🏎️ Seleziona quale auto/targa stai usando per questa prenotazione:", options=targhe_utente_list, key="sb_targa_booking_user")
         else:
             targa_selezionata_booking = targhe_utente_list[0] if targhe_utente_list else "-"
 
-        # --- GESTIONE SPECIFICA ALLOGGIATI (SOLO CONFERMA PER TUTTO IL PERIODO) ---
+        # --- GESTIONE SPECIFICA ALLOGGIATI ---
         if is_alloggi_user:
             giorni_corso = GRUPPI_STUDENTI.get(gruppo_utente, {}).get("giorni_default", [])
             if giorni_corso == [0, 1, 2]:
@@ -802,15 +766,16 @@ if not is_admin_or_segreteria:
                     confermati_oggi += 1
 
             st.info(f"🏠 **Stato {nome_grp_alloggi} per il {data_visiva}:**\n**{confermati_oggi} su {totale_gruppo_alloggi}** studenti alloggiati del tuo gruppo hanno già confermati la presenza in auto per questa data.")
-
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
+            
+            # MODIFICA 1: max_selections=4 rimuove l'opzione "Select all"
             selected_passengers = st.multiselect(
-                "👥 Seleziona chi viaggia in auto con te (facoltativo):",
+                "👥 Seleziona chi viaggia in auto con te (facoltativo, max 4):",
                 options=studenti_disponibili,
                 format_func=lambda u: f"{u['username']} ({u['gruppo']})",
-                key="ms_passengers_alloggi"
+                key="ms_passengers_alloggi",
+                max_selections=4
             )
-
             p_ids = [u["id"] for u in selected_passengers]
             p_names = [u["username"] for u in selected_passengers]
             txt_turno_alloggi = f"TUTTO_IL_GIORNO | TARGA:{targa_selezionata_booking}"
@@ -825,7 +790,6 @@ if not is_admin_or_segreteria:
                     if curr_d.weekday() in giorni_corso:
                         date_periodo.append(curr_d.strftime("%Y-%m-%d"))
                     curr_d += datetime.timedelta(days=1)
-
                 successi = 0
                 già_presenti = 0
                 for d_target in date_periodo:
@@ -844,7 +808,6 @@ if not is_admin_or_segreteria:
                         successi += 1
                     except Exception:
                         pass
-
                 st.success(f"🎉 Presenza auto confermata per **{successi}** date del tuo periodo di alloggio! ({già_presenti} date erano già confermate).")
                 st.rerun()
 
@@ -917,13 +880,14 @@ if not is_admin_or_segreteria:
             
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             
+            # MODIFICA 1: max_selections=4 rimuove l'opzione "Select all"
             selected_passengers = st.multiselect(
-                "👥 Seleziona chi è in auto con te (OBBLIGATORIO - Almeno 1 passeggero):",
+                "👥 Seleziona chi è in auto con te (OBBLIGATORIO - Almeno 1 passeggero, max 4):",
                 options=studenti_disponibili,
                 format_func=lambda u: f"{u['username']} ({u['gruppo']})",
-                key="ms_passengers_select"
+                key="ms_passengers_select",
+                max_selections=4
             )
-
             if occupati_gruppo >= max_quota:
                 st.error(f"❌ Limite raggiunto! Il gruppo **{gruppo_utente}** ha esaurito la quota massima di **{max_quota}** auto per oggi.")
             else:
@@ -931,7 +895,6 @@ if not is_admin_or_segreteria:
                     if not selected_passengers:
                         st.error("❌ **ATTENZIONE**: Devi selezionare **almeno un passeggero** che viaggia con te per poter prenotare (regola carpooling)!")
                     else:
-                        # Estrai solo i posti che sono accessibili specificamente per QUESTO corso
                         target_spots_corso = posti_accessibili_per_corso.get(gruppo_utente, [])
                         candidati_studenti = ottieni_posti_liberi_zona(target_spots_corso, posti_bloccati_eventi)
                         
@@ -1122,6 +1085,7 @@ else:
                         utenti_speciali.append(u)
         except Exception:
             pass
+
         if not utenti_speciali:
             st.warning("⚠ Nessun utente Staff o Alloggiato trovato nel sistema.")
         else:
@@ -1236,6 +1200,7 @@ else:
                 z_ev = get_zona_evento(p_id)
                 if pref in blocchi_selezionati or z_ev in blocchi_selezionati:
                     posti_interessati.append(p_id)
+
         dettagli_posti = {}
         if posti_interessati:
             with st.expander("✏️ Personalizza indicazione per singoli posti (in fase di creazione)"):
@@ -1245,6 +1210,7 @@ else:
                     txt_p = c_target.text_input(f"Posto {p_id} ({get_zona_evento(p_id)}):", key=f"inp_ev_{p_id}", placeholder="Es. Prof. Rossi")
                     if txt_p.strip():
                         dettagli_posti[p_id] = txt_p.strip()
+
         if st.button("Crea Evento e Blocca Parcheggi 🚫", use_container_width=True):
             if not nome_evento.strip():
                 st.error("Inserisci un nome per l'evento.")
@@ -1266,6 +1232,7 @@ else:
                 }).execute()
                 st.success(f"🎉 Evento '{nome_evento}' creato!")
                 st.rerun()
+
         st.divider()
         st.write("### 📋 Eventi Programmati & Report per Stampa")
         try:
@@ -1318,6 +1285,7 @@ else:
                                     det_p_curr = {}
                             elif not isinstance(det_p_curr, dict):
                                 det_p_curr = {}
+
                             st.caption("Personalizza testo/ospite assegnato a ciascun posto auto:")
                             imp_spots = []
                             if "TUTTI" in m_blocchi:
@@ -1336,6 +1304,7 @@ else:
                                 val_input = c_target.text_input(f"Posto {p_k} ({get_zona_evento(p_k)}):", value=det_p_curr.get(p_k, ""), key=f"inp_mod_{ev_id}_{p_k}")
                                 if val_input.strip():
                                     m_dettagli[p_k] = val_input.strip()
+
                             if st.form_submit_button("Salva Modifiche Evento 💾", use_container_width=True):
                                 str_m_blocchi = "TUTTI" if "TUTTI" in m_blocchi else ",".join(m_blocchi)
                                 str_m_classi = "TUTTE" if "TUTTE" in m_classi else ",".join(m_classi)
@@ -1382,7 +1351,6 @@ else:
                     horizontal=True
                 )
                 
-                # Mappa opzione interfaccia -> valore database
                 val_db = "META_CLASSE" if scelta == "METÀ CLASSE" else scelta
                 
                 if val_db != stato_curr:
@@ -1394,7 +1362,7 @@ else:
                     st.success(f"Aggiornata presenza per {grp} ({scelta})!")
                     st.rerun()
 
-    # TAB 5: REPORT E QUOTE (CON CONTEGGIO DINAMICO DEI POSTI ACCESSIBILI PER CORSO)
+    # TAB 5: REPORT E QUOTE
     with tab5:
         st.write(f"### 📊 Quote Posti Calcolate per il {data_visiva}")
         

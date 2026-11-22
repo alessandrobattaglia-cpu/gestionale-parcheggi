@@ -454,6 +454,16 @@ def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_t
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
 st.title("🚗 Parcheggi Symposium - Gestione Assegnazioni")
 
+# NASCONDE IL TASTO "SELECT ALL" NEI MULTISELECT
+st.markdown("""
+<style>
+[data-testid="stMultiSelectSelectAll"],
+div[data-baseweb="popover"] > div > div > button:first-child {
+    display: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 if "utente_autenticato" not in st.session_state:
     st.session_state["utente_autenticato"] = None
 
@@ -768,13 +778,12 @@ if not is_admin_or_segreteria:
             st.info(f"🏠 **Stato {nome_grp_alloggi} per il {data_visiva}:**\n**{confermati_oggi} su {totale_gruppo_alloggi}** studenti alloggiati del tuo gruppo hanno già confermati la presenza in auto per questa data.")
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             
-            # MODIFICA 1: max_selections=4 rimuove l'opzione "Select all"
             selected_passengers = st.multiselect(
-                "👥 Seleziona chi viaggia in auto con te (facoltativo, max 4):",
+                "👥 Seleziona chi viaggia in auto con te (facoltativo, max 6):",
                 options=studenti_disponibili,
                 format_func=lambda u: f"{u['username']} ({u['gruppo']})",
                 key="ms_passengers_alloggi",
-                max_selections=4
+                max_selections=6
             )
             p_ids = [u["id"] for u in selected_passengers]
             p_names = [u["username"] for u in selected_passengers]
@@ -880,13 +889,12 @@ if not is_admin_or_segreteria:
             
             studenti_disponibili = get_lista_studenti(utente_loggato["id"])
             
-            # MODIFICA 1: max_selections=4 rimuove l'opzione "Select all"
             selected_passengers = st.multiselect(
-                "👥 Seleziona chi è in auto con te (OBBLIGATORIO - Almeno 1 passeggero, max 4):",
+                "👥 Seleziona chi è in auto con te (OBBLIGATORIO - Almeno 1 passeggero, max 6):",
                 options=studenti_disponibili,
                 format_func=lambda u: f"{u['username']} ({u['gruppo']})",
                 key="ms_passengers_select",
-                max_selections=4
+                max_selections=6
             )
             if occupati_gruppo >= max_quota:
                 st.error(f"❌ Limite raggiunto! Il gruppo **{gruppo_utente}** ha esaurito la quota massima di **{max_quota}** auto per oggi.")

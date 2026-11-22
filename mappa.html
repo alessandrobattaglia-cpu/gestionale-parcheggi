@@ -78,6 +78,7 @@
     /* Stati speciali */
     .occupied             { fill: #e74c3c !important; opacity: 0.95; }  /* ROSSO - Occupato */
     .blocked              { fill: #7f8c8d !important; opacity: 0.95; }  /* GRIGIO - Bloccato / Non Agibile */
+
     /* Classi Colore Zone Evento */
     .event-zone-gialla { fill: #f1c40f !important; stroke: #d4ac0d; stroke-width: 2px; opacity: 0.95; }
     .event-zone-verde  { fill: #2ecc71 !important; stroke: #1e8449; stroke-width: 2px; opacity: 0.95; }
@@ -279,11 +280,11 @@
       const num = parseInt(parts[1], 10);
       
       if (pref === "Bassa") {
-        return num.toString();            // 1..15
+        return num.toString();              // 1..15
       } else if (pref === "Piazzale") {
-        return (15 + num).toString();     // 16..32
+        return (15 + num).toString();       // 16..32
       } else if (pref === "Alta") {
-        return (15 + 17 + num).toString(); // 33..50
+        return (15 + 17 + num).toString();  // 33..50
       } else {
         const abbr = prefixMap[pref] || pref[0];
         return abbr + num;
@@ -293,13 +294,11 @@
     document.querySelectorAll('.spot').forEach(spot => {
       const postoId = spot.getAttribute('data-id');
       const info = prenotazioniDB[postoId];
-
       if (postoId) {
         const w = parseFloat(spot.getAttribute('width')) || 22;
         const h = parseFloat(spot.getAttribute('height')) || 22;
         const x = parseFloat(spot.getAttribute('x')) + (w / 2);
         const y = parseFloat(spot.getAttribute('y')) + (h / 2) + 0.5;
-
         const abbr = getSpotLabel(postoId);
         const textElem = document.createElementNS("http://www.w3.org/2000/svg", "text");
         textElem.setAttribute("x", x);
@@ -310,12 +309,10 @@
         textElem.textContent = abbr;
         spot.parentNode.insertBefore(textElem, spot.nextSibling);
       }
-
       if (info) {
         const uName = (info.username || "").toLowerCase();
         const uGrp = info.gruppo || "";
         const zEv = info.zona_evento || "";
-
         if (info.is_mine) {
           spot.classList.add('my-spot');
         } 
@@ -340,7 +337,6 @@
           spot.classList.add('occupied');
         }
       }
-
       spot.addEventListener('mousemove', (e) => {
         const displaySpot = isStudentView ? getSpotLabel(postoId) : postoId;
         let text = `🚘 Posto: ${displaySpot}\n`;
@@ -348,7 +344,6 @@
         if (info) {
           const uName = info.username || "";
           const uGrp = info.gruppo || "";
-
           if (info.is_mine) {
             text += `📍 IL TUO POSTO PRENOTATO!\n👤 Conducente: ${uName}`;
             if (info.targa && info.targa !== '-') text += `\n🏎️ Targa: ${info.targa}`;
@@ -366,7 +361,6 @@
               text += `\n🏎️ Targa: ${info.targa}`;
             }
           }
-
           if (info.passeggeri && info.passeggeri !== '-') {
             text += `\n👥 Passeggeri in auto: ${info.passeggeri}`;
           }
@@ -379,18 +373,21 @@
         tooltip.style.left = (e.pageX + 15) + 'px';
         tooltip.style.top = (e.pageY + 15) + 'px';
       });
-
       spot.addEventListener('mouseout', () => {
         tooltip.style.display = 'none';
       });
     });
 
+    // MODIFICA 2: Aggiunto il numero del posto al badge giallo
     const mySpotElem = document.querySelector('.spot.my-spot');
     if (mySpotElem) {
+      const myPostoId = mySpotElem.getAttribute('data-id');
+      const displayPostoNum = isStudentView ? getSpotLabel(myPostoId) : myPostoId;
+      
       const mapContainer = document.getElementById('map-container');
       const badge = document.createElement('div');
       badge.className = 'user-callout-badge';
-      badge.innerHTML = '📍 IL TUO POSTO È QUI!';
+      badge.innerHTML = `📍 IL TUO POSTO È QUI! (Posto ${displayPostoNum})`;
       mapContainer.appendChild(badge);
 
       function positionBadge() {
@@ -411,7 +408,6 @@
     function scaricaMappaPNG() {
       const container = document.getElementById('map-container');
       if (!container) return;
-
       html2canvas(container, { 
         useCORS: true, 
         allowTaint: true,

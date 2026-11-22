@@ -443,8 +443,6 @@ def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_t
             if res_ins.data:
                 return True, p_cand
         except Exception:
-            # Se un altro utente ha occupato questo posto nello stesso millisecondo (grazie al vincolo UNIQUE su DB),
-            # l'eccezione viene catturata e si passa subito al candidato successivo.
             occupati_ora.add(p_cand)
             continue
             
@@ -454,12 +452,19 @@ def prenotazione_atomica_sicura(utente_id, data_target, lista_candidati, testo_t
 st.set_page_config(page_title="Parcheggi Symposium", page_icon="🚗", layout="wide")
 st.title("🚗 Parcheggi Symposium - Gestione Assegnazioni")
 
-# NASCONDE IL TASTO "SELECT ALL" NEI MULTISELECT
+# NASCONDE IL TASTO "SELECT ALL" NEI MULTISELECT (Tutte le versioni di Streamlit)
 st.markdown("""
 <style>
 [data-testid="stMultiSelectSelectAll"],
-div[data-baseweb="popover"] > div > div > button:first-child {
+div[data-baseweb="popover"] button:has(div),
+div[data-baseweb="popover"] ul[role="listbox"] > div:first-child button,
+div[data-baseweb="popover"] [role="option"][aria-label*="Select all"],
+div[data-baseweb="popover"] li[aria-label*="Select all"] {
     display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -792,33 +797,36 @@ if not is_admin_or_segreteria:
                 txt_turno_alloggi += f" | PASSENGERS_IDS:{','.join(map(str, p_ids))} | PASSENGERS_NAMES:{','.join(p_names)}"
 
             if st.button("Conferma Presenza in Auto per TUTTO IL PERIODO 🗓️", use_container_width=True):
-                date_periodo = []
-                curr_d = oggi
-                fine_d = oggi + datetime.timedelta(days=90)
-                while curr_d <= fine_d:
-                    if curr_d.weekday() in giorni_corso:
-                        date_periodo.append(curr_d.strftime("%Y-%m-%d"))
-                    curr_d += datetime.timedelta(days=1)
-                successi = 0
-                già_presenti = 0
-                for d_target in date_periodo:
-                    try:
-                        chk = supabase.table("prenotazioni").select("id").eq("utente_id", utente_loggato["id"]).eq("data", d_target).execute()
-                        if chk.data:
-                            già_presenti += 1
-                            continue
-                        
-                        supabase.table("prenotazioni").insert({
-                            "utente_id": utente_loggato["id"],
-                            "data": d_target,
-                            "posto_id": "ALLOGGI",
-                            "turno": txt_turno_alloggi
-                        }).execute()
-                        successi += 1
-                    except Exception:
-                        pass
-                st.success(f"🎉 Presenza auto confermata per **{successi}** date del tuo periodo di alloggio! ({già_presenti} date erano già confermate).")
-                st.rerun()
+                if len(selected_passengers) > 6:
+                    st.error("❌ **ERRORE**: Hai selezionato troppi passeggeri (massimo 6 consentiti).")
+                else:
+                    date_periodo = []
+                    curr_d = oggi
+                    fine_d = oggi + datetime.timedelta(days=90)
+                    while curr_d <= fine_d:
+                        if curr_d.weekday() in giorni_corso:
+                            date_periodo.append(curr_d.strftime("%Y-%m-%d"))
+                        curr_d += datetime.timedelta(days=1)
+                    successi = 0
+                    già_presenti = 0
+                    for d_target in date_periodo:
+                        try:
+                            chk = supabase.table("prenotazioni").select("id").eq("utente_id", utente_loggato["id"]).eq("data", d_target).execute()
+                            if chk.data:
+                                già_presenti += 1
+                                continue
+                            
+                            supabase.table("prenotazioni").insert({
+                                "utente_id": utente_loggato["id"],
+                                "data": d_target,
+                                "posto_id": "ALLOGGI",
+                                "turno": txt_turno_alloggi
+                            }).execute()
+                            successi += 1
+                        except Exception:
+                            pass
+                    st.success(f"🎉 Presenza auto confermata per **{successi}** date del tuo periodo di alloggio! ({già_presenti} date erano già confermate).")
+                    st.rerun()
 
         elif gruppo_utente in ["Staff", "Segreteria"]:
             st.info("ℹ️ Come membro dello Staff / Segreteria puoi riservare un posto giornaliero o permanente.")
@@ -902,6 +910,8 @@ if not is_admin_or_segreteria:
                 if st.button("Prenota Posto Auto Studenti 🚗", use_container_width=True):
                     if not selected_passengers:
                         st.error("❌ **ATTENZIONE**: Devi selezionare **almeno un passeggero** che viaggia con te per poter prenotare (regola carpooling)!")
+                    elif len(selected_passengers) > 6:
+                        st.error("❌ **ERRORE**: Hai selezionato troppi passeggeri (massimo 6 consentiti). Rimuovi quelli in eccesso.")
                     else:
                         target_spots_corso = posti_accessibili_per_corso.get(gruppo_utente, [])
                         candidati_studenti = ottieni_posti_liberi_zona(target_spots_corso, posti_bloccati_eventi)
